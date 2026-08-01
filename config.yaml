@@ -1,0 +1,123 @@
+# Configuración del bot. Los secretos van en .env, aquí solo parámetros.
+
+mode: paper           # paper | live. El arranque pide confirmación: sin ella = paper
+exchange: kucoin
+
+# Datos de mercado. timeframe = marco por defecto; cada cabeza puede usar el suyo.
+timeframe: 4h          # por defecto 4h (donde el edge-scanner encontró señal)
+lookback: 300          # nº de velas a mantener para los indicadores
+
+# LA HIDRA: cada cabeza con su estrategia, su timeframe y su riesgo.
+# Basado en validación walk-forward (comisiones reales + mark-to-market, 2026-08-01):
+#   - Reversión en 4h sobre XRP/DOGE: único enfoque que aguanta OOS (DOGE +1.89%,
+#     XRP breakeven). El edge está en la SOBREVENTA PROFUNDA (rsi_oversold=25).
+#   - Volumen en 5m sobre SHIB/PEPE: ESPECULATIVO, sin edge probado, da actividad.
+universe:
+  # 🟢 FUNDAMENTADA: reversión solo-largos 4h, sobreventa profunda (aguanta OOS).
+  - name: reversion4h
+    symbols: [XRP/USDT, DOGE/USDT]
+    strategy: mean_reversion
+    timeframe: 4h
+    params:
+      rsi_period: 14
+      rsi_oversold: 25           # sobreventa PROFUNDA (donde vive el (débil) edge)
+      rsi_overbought: 70
+      bb_period: 20
+      bb_std: 2.0
+    risk:
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.03
+      position_size_pct: 0.12
+
+  # 🟡 ESPECULATIVA: explosiones de volumen 5m (sin edge probado).
+  - name: volumen5m
+    symbols: [SHIB/USDT, PEPE/USDT]
+    strategy: volume_surge
+    timeframe: 5m
+    params:
+      vol_period: 20
+      surge_mult: 2.0
+      min_change_pct: 0.0
+    risk:
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.20
+      trailing_stop_pct: 0.05
+      position_size_pct: 0.08
+
+  # 🟢 FUNDAMENTADA: trend-following en diario (golden cross). OOS positivo en
+  # BTC/ETH/XRP (BTC +2.16%, ETH +4.74%). Baja frecuencia, comisiones irrelevantes.
+  # Sustituye a momentum1h (que no validó OOS).
+  - name: trend1d
+    symbols: [BTC/USDT, ETH/USDT]
+    strategy: trend
+    timeframe: 1d
+    params:
+      fast: 20
+      slow: 50
+    risk:
+      stop_loss_pct: 0.08
+      take_profit_pct: 0.30       # alto: el trailing es la salida real
+      trailing_stop_pct: 0.10     # amplio: dejar correr la tendencia
+      position_size_pct: 0.12
+
+  # 🔴 OBSERVACIÓN: scalping 5m (pierde por comisiones; solo ver el efecto).
+  - name: scalping5m
+    symbols: [SOL/USDT, ADA/USDT]
+    strategy: scalping
+    timeframe: 5m
+    params:
+      ema_fast: 5
+      ema_slow: 20
+    risk:
+      stop_loss_pct: 0.005
+      take_profit_pct: 0.005
+      position_size_pct: 0.05
+
+  # 🔴 OBSERVACIÓN: grid 1h (CATASTRÓFICO en validación -72%; solo verlo fallar).
+  - name: grid_obs
+    symbols: [LTC/USDT]
+    strategy: grid
+    timeframe: 1h
+    max_concurrent_per_symbol: 12   # el grid sostiene varios peldaños
+    params:
+      range_period: 100
+      levels: 10
+    risk:
+      stop_loss_pct: 0.10
+      take_profit_pct: 0.015
+      position_size_pct: 0.015
+
+risk:
+  quote_currency: USDT
+  starting_balance: 50          # saldo simulado (paper) ~ tu cuenta real de prueba
+  position_size_pct: 0.08       # por defecto (cada cabeza puede sobrescribir)
+  max_open_positions: 25        # amplio: el grid necesita muchos peldaños
+  stop_loss_pct: 0.05           # defaults; cada categoría puede sobrescribir
+  take_profit_pct: 0.03
+  max_daily_loss_pct: 0.20      # corte diario (paper, con muchas cabezas)
+
+engine:
+  poll_interval_seconds: 60     # cada cuánto revisa el mercado (modo live paper)
+  fee_pct: 0.00078              # comisión por operación (0.1% con -22% de descuento)
+  slippage_pct: 0.0005          # deslizamiento estimado por operación (0.05%)
+  report_interval_seconds: 900  # cada cuánto vuelca el informe a data/report.txt
+  alive_interval_seconds: 21600 # señal de vida a Telegram (6 h)
+  error_notify_interval_seconds: 1800  # anti-spam de avisos de fallo (30 min)
+
+# Sniper de recién listadas (EXPERIMENTAL, ALTO RIESGO). Desactivado por defecto.
+# No es validable con backtesting: úsalo solo con capital que puedas perder.
+# Se lanza aparte: python scripts/sniper.py
+sniper:
+  enabled: true
+  poll_interval_seconds: 30     # cada cuánto busca nuevos listings
+  position_size_pct: 0.02       # 2% del balance por tiro (bajo a propósito)
+  take_profit_pct: 0.5          # objetivo +50%
+  stop_loss_pct: 0.15           # corte -15%
+  timeout_minutes: 60           # salir por tiempo si no salta TP/SL
+  max_concurrent: 3
+
+storage:
+  db_path: data/tradebot.db
+
+logging:
+  level: INFO

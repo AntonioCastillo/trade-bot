@@ -1,0 +1,28 @@
+[Unit]
+Description=TradeBot (KuCoin) - bot de trading multi-cabeza
+After=network-online.target chronyd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tradebot
+Group=tradebot
+WorkingDirectory=/opt/tradebot
+ExecStart=/opt/tradebot/.venv/bin/python scripts/run.py
+
+# Reinicio automático si el proceso cae (equivalente al run_forever.bat de Windows).
+Restart=always
+RestartSec=10
+
+# MODO POR DEFECTO: PAPER (simulación). Para operar en REAL con dinero, descomenta
+# la línea siguiente con la frase EXACTA (y ten las 3 claves de KuCoin en .env):
+# Environment=TRADEBOT_LIVE_CONFIRM=SI OPERAR EN REAL
+
+# Endurecimiento básico (el bot solo hace peticiones salientes y escribe en su dir).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/tradebot
+
+[Install]
+WantedBy=multi-user.target
