@@ -13,7 +13,9 @@ APP_USER="${APP_USER:-tradebot}"
 PYBIN="${PYBIN:-python3.11}"
 
 echo ">>> Instalando dependencias del sistema (Python, git, chrony)..."
-dnf install -y "${PYBIN}" "${PYBIN}-pip" git chrony
+dnf install -y "${PYBIN}" git chrony
+# pip: ensurepip (viene con el venv) o el paquete del sistema como respaldo.
+"${PYBIN}" -m ensurepip --upgrade >/dev/null 2>&1 || dnf install -y "${PYBIN}-pip" || true
 
 echo ">>> Sincronizando el reloj (crítico para firmar peticiones a KuCoin)..."
 systemctl enable --now chronyd
