@@ -172,6 +172,7 @@ def run_forever(
     last_alive = time.time()
     prev_halted = False
     err_state = {"last": 0.0}
+    last_closed: dict[str, object] = {}   # última vela CERRADA procesada por símbolo
 
     def _notify_fail(prefix: str, exc: Exception) -> None:
         """Avisa por Telegram de un fallo, con anti-spam por tiempo."""
@@ -222,7 +223,17 @@ def run_forever(
                         candles = engine.exchange.fetch_ohlcv(
                             symbol, tf, config.lookback
                         )
-                        engine.process(symbol, candles)
+                        if len(candles) < 2:
+                            continue
+                        # Decidir solo sobre velas CERRADAS (descarta la vela en
+                        # formación) y UNA vez por vela, como el backtest. Evita
+                        # re-disparar la misma señal en cada sondeo de 60s.
+                        closed = candles.iloc[:-1]
+                        ts = closed.index[-1]
+                        if last_closed.get(symbol) == ts:
+                            continue
+                        last_closed[symbol] = ts
+                        engine.process(symbol, closed)
                     except Exception as exc:
                         logger.exception("[%s] error en el ciclo; continúo", symbol)
                         _notify_fail(f"en {symbol}", exc)

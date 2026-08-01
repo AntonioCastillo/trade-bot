@@ -1,0 +1,14 @@
+[Unit]
+Description=TradeBot - foto de estado (oneshot, se dispara a mano)
+After=tradebot.service
+
+[Service]
+Type=oneshot
+User=tradebot
+Group=tradebot
+WorkingDirectory=/opt/tradebot
+ExecStart=/bin/bash /opt/tradebot/status.sh
+
+# Sin [Install]: no se "habilita", se lanza cuando quieras con:
+#   sudo systemctl start tradebot-status
+#   journalctl -u tradebot-status -n 40 --no-pager
