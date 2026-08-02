@@ -116,6 +116,17 @@ sniper:
   timeout_minutes: 60           # salir por tiempo si no salta TP/SL
   max_concurrent: 3
 
+# Funding-rate carry delta-neutral (long spot + short perp). Subsistema aparte,
+# necesita FUTUROS. Se lanza con: python scripts/carry.py  (paper, sin claves)
+carry:
+  enabled: true                 # corre como una cabeza más (PAPER) dentro del bot
+  symbols: [ETH/USDT, XRP/USDT, DOGE/USDT]   # spot; el perp se deduce (+ ":USDT")
+  notional_pct: 0.20            # % del balance por posición
+  min_annualized_pct: 5.0       # abrir solo si el funding anualizado supera esto
+  exit_annualized_pct: 0.0      # cerrar si cae por debajo (p.ej. funding negativo)
+  poll_interval_seconds: 300
+  fee_pct: 0.0008               # comisión por pata (aprox)
+
 storage:
   db_path: data/tradebot.db
 

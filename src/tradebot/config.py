@@ -47,6 +47,20 @@ class SniperConfig:
 
 
 @dataclass
+class CarryConfig:
+    """Funding-rate carry delta-neutral (long spot + short perp). Subsistema aparte
+    (necesita futuros). Se lanza con scripts/carry.py."""
+
+    enabled: bool = False
+    symbols: list[str] = field(default_factory=list)   # spot; el perp = symbol + ":USDT"
+    notional_pct: float = 0.20        # % del balance por posición (por pata)
+    min_annualized_pct: float = 5.0   # abrir solo si el funding anualizado supera esto
+    exit_annualized_pct: float = 0.0  # cerrar si cae por debajo (p.ej. funding negativo)
+    poll_interval_seconds: int = 300
+    fee_pct: float = 0.0008           # comisión por pata (aprox, taker con descuento)
+
+
+@dataclass
 class Instrument:
     """Un símbolo concreto ya resuelto con su estrategia y su riesgo efectivo."""
 
@@ -90,6 +104,7 @@ class Config:
     risk: RiskConfig = field(default_factory=RiskConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
     sniper: SniperConfig = field(default_factory=SniperConfig)
+    carry: CarryConfig = field(default_factory=CarryConfig)
     db_path: str = "data/tradebot.db"
     log_level: str = "INFO"
     credentials: Credentials = field(default_factory=Credentials)
@@ -172,6 +187,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     risk = RiskConfig(**(raw.get("risk") or {}))
     engine = EngineConfig(**(raw.get("engine") or {}))
     sniper = SniperConfig(**(raw.get("sniper") or {}))
+    carry = CarryConfig(**(raw.get("carry") or {}))
     global_timeframe = raw.get("timeframe", "1h")
     instruments = _build_instruments(raw.get("universe") or [], risk, global_timeframe)
 
@@ -192,6 +208,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         risk=risk,
         engine=engine,
         sniper=sniper,
+        carry=carry,
         db_path=(raw.get("storage") or {}).get("db_path", "data/tradebot.db"),
         log_level=(raw.get("logging") or {}).get("level", "INFO"),
         credentials=credentials,

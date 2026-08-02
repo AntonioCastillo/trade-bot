@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .carry import CarryRunner
 from .config import Config, load_config
 from .engine import Engine
 from .exchange import Exchange
@@ -76,6 +77,18 @@ def _notify_alive(engine: Engine, config: Config) -> None:
         f"Operaciones: {s['trades']} | P&L {s['pnl_abs']:+.2f} {config.risk.quote_currency}\n"
         f"Estado: {'OPERANDO' if not engine.risk.halted else 'DETENIDO (límite diario)'}"
     )
+
+
+def _maybe_start_carry(config: Config, notifier: Notifier) -> threading.Thread | None:
+    """Si el carry está activado, lo arranca en un hilo del mismo proceso (PAPER).
+    Usa su propio cliente de exchange y su propio balance simulado."""
+    if not config.carry.enabled:
+        return None
+    runner = CarryRunner(config, Exchange(config), notifier)
+    thread = threading.Thread(target=runner.run_forever, name="carry", daemon=True)
+    thread.start()
+    logger.info("Carry (funding) lanzado en segundo plano (mismo proceso) | PAPER")
+    return thread
 
 
 def _maybe_first_run_api_check(engine: Engine, config: Config) -> None:
@@ -197,6 +210,7 @@ def run_forever(
     )
     _maybe_first_run_api_check(engine, config)
     _maybe_start_sniper(config, engine.notifier)
+    _maybe_start_carry(config, engine.notifier)
 
     # Fija el cortafuegos de pérdida diaria contra el equity REAL de arranque
     # (en live es el balance de la cuenta, no el starting_balance del config).
