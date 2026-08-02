@@ -89,7 +89,7 @@ universe:
 
 risk:
   quote_currency: USDT
-  starting_balance: 50          # saldo simulado (paper) ~ tu cuenta real de prueba
+  starting_balance: 1000        # saldo simulado (paper) para OBSERVAR con números legibles
   position_size_pct: 0.08       # por defecto (cada cabeza puede sobrescribir)
   max_open_positions: 25        # amplio: el grid necesita muchos peldaños
   stop_loss_pct: 0.05           # defaults; cada categoría puede sobrescribir
