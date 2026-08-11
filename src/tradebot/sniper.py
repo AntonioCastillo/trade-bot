@@ -6,8 +6,8 @@ recién listada no tiene histórico), es donde más pump & dump / rug pulls hay,
 la liquidez/slippage pueden ser extremos. Es más apostar que invertir. Por eso:
   - Usa un % de capital MUY bajo por tiro (config `sniper.position_size_pct`).
   - Salidas CONFIGURABLES: take-profit siempre; stop-loss y timeout OPCIONALES
-    (poner a 0 los desactiva). Modo "billete de lotería": TP en x100, sin SL ni
-    timeout → se aguanta cada moneda esperando el pump; casi todas mueren, se
+    (poner a 0 los desactiva). Modo "billete de lotería": TP alto (p.ej. x10), sin
+    SL ni timeout → se aguanta cada moneda esperando el pump; casi todas mueren, se
     apuesta a que una explote. `summary()` da el mark-to-market de los billetes.
   - Está DESACTIVADO por defecto (`sniper.enabled: false`).
 

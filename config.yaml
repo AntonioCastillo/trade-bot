@@ -50,20 +50,36 @@ universe:
       trailing_stop_pct: 0.10
       position_size_pct: 0.20
 
+  # 🔴 SIN EDGE — REACTIVADA SOLO PARA OBSERVAR LA SANGRÍA POR COMISIONES.
+  # Scalp EMA5>EMA20 @5m con TP/SL de ±0.5%: el coste round-trip (~0.25%) es la
+  # MITAD del objetivo -> hace falta ~75% de aciertos solo para no perder (imposible
+  # a 5m). Puesta a propósito para ver el PF<1 en el informe. NO es una apuesta de
+  # edge; quítala cuando ya hayas visto la sangría.
+  - name: scalping5m
+    symbols: [XRP/USDT, DOGE/USDT]
+    strategy: scalping
+    timeframe: 5m
+    params:
+      ema_fast: 5
+      ema_slow: 20
+      min_gap_pct: 0.0
+    risk:
+      stop_loss_pct: 0.005        # ±0.5%: objetivo de scalp (coste ~0.25% = mitad)
+      take_profit_pct: 0.005
+      position_size_pct: 0.05
+
   # Eliminadas tras verlas sangrar en vivo (confirmando la validación):
-  #   - scalping5m (SOL/ADA @5m):   pierde por comisiones, PF 0.42 en paper.
   #   - grid_obs   (LTC @1h):       acumulaba bolsa underwater (la trampa del -72%).
   #   - volumen5m  (SHIB/PEPE @5m): -6.80 USDT en vivo, 0% aciertos; sin edge, el
   #                                 ruido+comisiones de memecoins en 5m la sangran.
-  # Reactivar solo si se revalidan con edge real. Activas ahora (capital
-  # concentrado): momentum1d + breakout1d (0.20/posición) + sniper.
-  # (trend1d y reversion4h aparcadas — ver cabecera; carry APAGADO).
+  # Activas: momentum1d + breakout1d (edge, 0.20/pos) + scalping5m (OBSERVACIÓN) +
+  # sniper. (trend1d y reversion4h aparcadas — ver cabecera; carry APAGADO).
 
 risk:
   quote_currency: USDT
   starting_balance: 1000        # saldo simulado (paper) para OBSERVAR con números legibles
   position_size_pct: 0.08       # por defecto (cada cabeza puede sobrescribir)
-  max_open_positions: 6         # 2 cabezas × 2 símbolos + margen (sniper va aparte)
+  max_open_positions: 8         # 3 cabezas × 2 símbolos + margen (sniper va aparte)
   stop_loss_pct: 0.05           # defaults; cada categoría puede sobrescribir
   take_profit_pct: 0.03
   max_daily_loss_pct: 0.20      # corte diario (paper, con muchas cabezas)
@@ -78,16 +94,18 @@ engine:
 
 # Sniper de recién listadas (EXPERIMENTAL, ALTO RIESGO). No validable con
 # backtesting: es apostar, no invertir. Modo "BILLETE DE LOTERÍA": entrada
-# pequeña en cada moneda nueva, SIN stop y SIN timeout, salir solo en x100.
-# Casi todas morirán (dinero perdido); se apuesta a que una explote. El resumen
-# periódico del log muestra el valor de los billetes abiertos (mark-to-market).
+# pequeña en cada moneda nueva, SIN stop y SIN timeout, salir en x9.
+# Objetivo x9 = máximo VALOR ESPERADO en el rango x5-x10 (medido sobre monedas
+# KuCoin vivas: EV ~2.8x/billete; ~28% tocaron x9 alguna vez). OJO: es EV con
+# SESGO DE SUPERVIVENCIA (las muertas/delistadas no cuentan) -> optimista; el real
+# es menor. Casi todas morirán igual; el resumen del log da el mark-to-market.
 sniper:
   enabled: true                 # ACTIVO (lotería, en paper mientras mode=paper)
   poll_interval_seconds: 30     # cada cuánto busca nuevos listings
   position_size_pct: 0.01       # 1% por tiro (poco capital: es un billete)
-  take_profit_pct: 99.0         # objetivo x100 (+9900%); única salida
+  take_profit_pct: 8.0          # objetivo x9 (+800%); único punto de salida
   stop_loss_pct: 0.0            # 0 = SIN stop (se aguanta el billete)
-  timeout_minutes: 0            # 0 = SIN timeout (aguantar hasta el x100)
+  timeout_minutes: 0            # 0 = SIN timeout (aguantar hasta el x9)
   max_concurrent: 50            # muchos billetes a la vez (para ver resultados a lo ancho)
 
 # Funding-rate carry delta-neutral (long spot + short perp).
