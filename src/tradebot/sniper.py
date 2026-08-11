@@ -64,7 +64,13 @@ class Sniper:
         self.quote = config.risk.quote_currency
         self.known: set[str] = set()
         self.snipes: list[Snipe] = []
+        # Recién listadas detectadas pero aún sin precio (sin trades): se reintenta
+        # su entrada en ciclos siguientes hasta que aparezca precio o se agoten los
+        # intentos. Evita perder para siempre las monedas más nuevas (el objetivo).
+        self.pending: dict[str, int] = {}
         self._paper_balance = config.risk.starting_balance
+
+    MAX_ENTRY_RETRIES = 20   # ~20 ciclos (p.ej. 10 min a 30s) antes de rendirse
 
     # --- Estado persistente de símbolos conocidos ---------------------------------
 
@@ -100,18 +106,23 @@ class Sniper:
             return self.exchange.fetch_balance(self.quote)
         return self._paper_balance
 
-    def enter(self, symbol: str) -> None:
+    def enter(self, symbol: str) -> bool:
+        """Intenta abrir el billete. Devuelve True si entró o no procede reintentar
+        (maxed, sin capital, rechazo real); False si falta precio todavía (recién
+        listada sin trades) -> reintentar en ciclos siguientes."""
         if len(self.snipes) >= self.cfg.max_concurrent:
             logger.warning("[SNIPER] máximo de tiros simultáneos; ignoro %s", symbol)
-            return
+            return True
         try:
             price = self.exchange.fetch_last_price(symbol)
         except Exception:
-            logger.exception("[SNIPER] no pude leer precio de %s; lo salto", symbol)
-            return
+            logger.info("[SNIPER] %s aún sin precio (recién listada); reintento luego", symbol)
+            return False
+        if price <= 0:
+            return False
         capital = self._balance() * self.cfg.position_size_pct
-        if capital <= 0 or price <= 0:
-            return
+        if capital <= 0:
+            return True   # sin capital: no reintentar en bucle
         amount = capital / price
 
         if self.live:
@@ -119,7 +130,7 @@ class Sniper:
                 self.exchange.create_market_buy(symbol, capital)
             except Exception as e:
                 logger.warning("[SNIPER] compra real rechazada en %s: %s", symbol, e)
-                return
+                return True   # rechazo real: no reintentar indefinidamente
         else:
             self._paper_balance -= capital
 
@@ -145,6 +156,7 @@ class Sniper:
             f"Entrada: {price:.8f}  |  {capital:.2f} {self.quote}\n"
             f"Objetivo: x{mult:.0f} ({take_profit:.8f})  |  {sl_txt}  |  {to_txt}"
         )
+        return True
 
     # --- Gestión de salidas -------------------------------------------------------
 
@@ -230,7 +242,18 @@ class Sniper:
                 try:
                     for symbol in self.poll():
                         logger.info("[SNIPER] ¡NUEVA LISTADA detectada!: %s", symbol)
-                        self.enter(symbol)
+                        self.pending.setdefault(symbol, 0)
+                    # Intenta entrar en las pendientes; reintenta las que aún no
+                    # tienen precio (recién listadas) hasta MAX_ENTRY_RETRIES.
+                    for symbol in list(self.pending):
+                        if self.enter(symbol):
+                            del self.pending[symbol]
+                        else:
+                            self.pending[symbol] += 1
+                            if self.pending[symbol] >= self.MAX_ENTRY_RETRIES:
+                                logger.warning("[SNIPER] %s sigue sin precio tras %d intentos; "
+                                               "lo dejo", symbol, self.pending[symbol])
+                                del self.pending[symbol]
                     self.manage()
                     # Resumen periódico (~cada 30 min) para observar la lotería.
                     if self.snipes and time.time() - last_summary >= 1800:

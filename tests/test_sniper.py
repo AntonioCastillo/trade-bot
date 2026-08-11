@@ -113,6 +113,50 @@ def test_lottery_mode_disables_sl_and_timeout(tmp_path):
     assert sniper.snipes == []
 
 
+class _NoPriceThenPrice:
+    """Recién listada: la 1ª lectura de precio falla (sin trades), la 2ª ya da precio."""
+    def __init__(self):
+        self.calls = 0
+
+    def market_symbols(self):
+        return {"MOON/USDT"}
+
+    def fetch_last_price(self, symbol):
+        self.calls += 1
+        if self.calls == 1:
+            raise ValueError("sin precio todavía")
+        return 2.0
+
+
+def test_enter_retries_when_no_price_yet(tmp_path):
+    ex = _NoPriceThenPrice()
+    sniper = _sniper(tmp_path, ex)
+    assert sniper.enter("MOON/USDT") is False   # aún sin precio -> reintentar
+    assert sniper.snipes == []
+    assert sniper.enter("MOON/USDT") is True     # ahora sí entra
+    assert len(sniper.snipes) == 1
+
+
+def test_fetch_last_price_fallback_and_clean_error():
+    from tradebot.exchange import Exchange
+    import pytest as _pytest
+    cfg = make_config(make_instrument())
+    ex = Exchange(cfg)
+
+    class _Client:
+        def __init__(self, ticker):
+            self.ticker = ticker
+
+        def fetch_ticker(self, symbol):
+            return self.ticker
+
+    ex._client = _Client({"last": None, "close": 5.0, "bid": None, "ask": None})
+    assert ex.fetch_last_price("X/USDT") == 5.0          # cae a 'close'
+    ex._client = _Client({"last": None, "close": None, "bid": None, "ask": None})
+    with _pytest.raises(ValueError):                     # sin precio -> error limpio
+        ex.fetch_last_price("X/USDT")
+
+
 def test_summary_marks_open_tickets(tmp_path):
     ex = _FakeExchange(["BTC/USDT"], price=1.0)
     sniper = _lottery_sniper(tmp_path, ex)

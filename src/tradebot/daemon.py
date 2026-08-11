@@ -50,6 +50,21 @@ def write_report_snapshot(
     return text
 
 
+def _heads_summary(config: Config) -> str:
+    """Lista legible de las cabezas activas (para el arranque y el heartbeat)."""
+    from collections import OrderedDict
+
+    groups: "OrderedDict[str, list[str]]" = OrderedDict()
+    for ins in config.instruments:
+        groups.setdefault(ins.category, []).append(ins.symbol.split("/")[0])
+    lines = [f"• {cat}: {', '.join(syms)}" for cat, syms in groups.items()]
+    if config.sniper.enabled:
+        lines.append("• sniper (recién listadas)")
+    if config.carry.enabled:
+        lines.append("• carry (funding)")
+    return "\n".join(lines) if lines else "(ninguna)"
+
+
 def _maybe_start_sniper(config: Config, notifier: Notifier) -> threading.Thread | None:
     """Si el sniper está activado, lo arranca en un hilo del MISMO proceso, para
     que todo corra en una sola ventana. Usa su propio cliente de exchange."""
@@ -75,7 +90,8 @@ def _notify_alive(engine: Engine, config: Config) -> None:
         f"💓 <b>Bot activo</b>\n"
         f"Equity: {eq}\n"
         f"Operaciones: {s['trades']} | P&L {s['pnl_abs']:+.2f} {config.risk.quote_currency}\n"
-        f"Estado: {'OPERANDO' if not engine.risk.halted else 'DETENIDO (límite diario)'}"
+        f"Estado: {'OPERANDO' if not engine.risk.halted else 'DETENIDO (límite diario)'}\n"
+        f"<b>Cabezas activas:</b>\n{_heads_summary(config)}"
     )
 
 
@@ -205,9 +221,8 @@ def run_forever(
         balance_txt = "n/d (no se pudo leer)"
     engine.notifier.notify(
         f"🤖 <b>Bot iniciado</b> ({config.mode.upper()})\n"
-        f"Símbolos: {', '.join(symbols)}\n"
-        f"Timeframe: {config.timeframe}  |  ciclo {interval}s\n"
-        f"Balance: {balance_txt}"
+        f"<b>Cabezas activas:</b>\n{_heads_summary(config)}\n"
+        f"Ciclo {interval}s  |  Balance: {balance_txt}"
     )
     _maybe_first_run_api_check(engine, config)
     _maybe_start_sniper(config, engine.notifier)

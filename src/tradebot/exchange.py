@@ -118,8 +118,15 @@ class Exchange:
         return out[-total:]
 
     def fetch_last_price(self, symbol: str) -> float:
+        """Último precio. Una recién listada puede no tener 'last' aún (sin trades):
+        cae a close/bid/ask y, si tampoco hay, lanza ValueError limpio (no TypeError
+        por float(None))."""
         ticker = self._client.fetch_ticker(symbol)
-        return float(ticker["last"])
+        price = (ticker.get("last") or ticker.get("close")
+                 or ticker.get("bid") or ticker.get("ask"))
+        if price is None:
+            raise ValueError(f"{symbol}: sin precio disponible todavía (recién listada)")
+        return float(price)
 
     def fetch_balance(self, currency: str) -> float:
         """Saldo libre de una moneda. Requiere credenciales (modo live)."""
