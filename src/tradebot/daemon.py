@@ -87,7 +87,8 @@ def _maybe_start_carry(config: Config, notifier: Notifier) -> threading.Thread |
     runner = CarryRunner(config, Exchange(config), notifier)
     thread = threading.Thread(target=runner.run_forever, name="carry", daemon=True)
     thread.start()
-    logger.info("Carry (funding) lanzado en segundo plano (mismo proceso) | PAPER")
+    # El propio runner ya loguea si es PAPER, DRY-RUN o REAL según config+confirmación.
+    logger.info("Carry (funding) lanzado en segundo plano (mismo proceso)")
     return thread
 
 

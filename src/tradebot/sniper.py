@@ -5,7 +5,10 @@ inicial. Punto clave y honesto: esto NO es validable con backtesting (una moneda
 recién listada no tiene histórico), es donde más pump & dump / rug pulls hay, y
 la liquidez/slippage pueden ser extremos. Es más apostar que invertir. Por eso:
   - Usa un % de capital MUY bajo por tiro (config `sniper.position_size_pct`).
-  - Cierra por take-profit, stop-loss O timeout (no se queda enganchado).
+  - Salidas CONFIGURABLES: take-profit siempre; stop-loss y timeout OPCIONALES
+    (poner a 0 los desactiva). Modo "billete de lotería": TP en x100, sin SL ni
+    timeout → se aguanta cada moneda esperando el pump; casi todas mueren, se
+    apuesta a que una explote. `summary()` da el mark-to-market de los billetes.
   - Está DESACTIVADO por defecto (`sniper.enabled: false`).
 
 Modos:
@@ -40,8 +43,9 @@ class Snipe:
     amount: float
     entry_price: float
     take_profit: float
-    stop_loss: float
-    deadline: datetime
+    stop_loss: float             # 0.0 = sin stop (se aguanta el billete)
+    deadline: datetime | None    # None = sin timeout (aguantar hasta el objetivo)
+    invested: float = 0.0        # capital metido (para el resumen)
 
 
 class Sniper:
@@ -119,19 +123,27 @@ class Sniper:
         else:
             self._paper_balance -= capital
 
+        # SL y timeout son OPCIONALES: 0 (o negativo) = desactivados. En modo
+        # "billete de lotería" no hay stop ni timeout: se aguanta hasta el objetivo.
+        stop_loss = price * (1 - self.cfg.stop_loss_pct) if self.cfg.stop_loss_pct > 0 else 0.0
+        deadline = (datetime.now(timezone.utc) + timedelta(minutes=self.cfg.timeout_minutes)
+                    if self.cfg.timeout_minutes > 0 else None)
+        take_profit = price * (1 + self.cfg.take_profit_pct)
+
         snipe = Snipe(
-            symbol=symbol, amount=amount, entry_price=price,
-            take_profit=price * (1 + self.cfg.take_profit_pct),
-            stop_loss=price * (1 - self.cfg.stop_loss_pct),
-            deadline=datetime.now(timezone.utc) + timedelta(minutes=self.cfg.timeout_minutes),
+            symbol=symbol, amount=amount, entry_price=price, take_profit=take_profit,
+            stop_loss=stop_loss, deadline=deadline, invested=capital,
         )
         self.snipes.append(snipe)
-        logger.info("[SNIPER] ENTRA %s @ %.8f (TP %.8f / SL %.8f)",
-                    symbol, price, snipe.take_profit, snipe.stop_loss)
+        mult = 1 + self.cfg.take_profit_pct
+        sl_txt = f"{stop_loss:.8f}" if stop_loss > 0 else "sin SL"
+        to_txt = "sin timeout" if deadline is None else deadline.strftime("%H:%M")
+        logger.info("[SNIPER] ENTRA %s @ %.8f (objetivo x%.0f = %.8f | %s | %s)",
+                    symbol, price, mult, take_profit, sl_txt, to_txt)
         self.notifier.notify(
             f"🚀 <b>SNIPE</b> nueva listada {symbol}\n"
             f"Entrada: {price:.8f}  |  {capital:.2f} {self.quote}\n"
-            f"TP: {snipe.take_profit:.8f}  SL: {snipe.stop_loss:.8f}"
+            f"Objetivo: x{mult:.0f} ({take_profit:.8f})  |  {sl_txt}  |  {to_txt}"
         )
 
     # --- Gestión de salidas -------------------------------------------------------
@@ -148,9 +160,9 @@ class Sniper:
             reason = None
             if price >= s.take_profit:
                 reason = "take-profit"
-            elif price <= s.stop_loss:
+            elif s.stop_loss > 0 and price <= s.stop_loss:
                 reason = "stop-loss"
-            elif now >= s.deadline:
+            elif s.deadline is not None and now >= s.deadline:
                 reason = "timeout"
             if reason:
                 self._exit(s, price, reason)
@@ -179,11 +191,40 @@ class Sniper:
             f"P&L: {pnl:+.2f} {self.quote} ({pnl_pct:+.2f}%)"
         )
 
+    # --- Resumen (mark-to-market de los billetes abiertos) ------------------------
+
+    def summary(self) -> dict:
+        """Valor actual de los billetes abiertos vs lo invertido. Imprescindible
+        para 'ver resultados' de una estrategia que casi nunca cierra (x100)."""
+        invested = value = 0.0
+        best = None
+        for s in self.snipes:
+            try:
+                price = self.exchange.fetch_last_price(s.symbol)
+            except Exception:
+                price = s.entry_price
+            invested += s.invested
+            value += price * s.amount
+            mult = price / s.entry_price if s.entry_price else 1.0
+            if best is None or mult > best[1]:
+                best = (s.symbol, mult)
+        return {"open": len(self.snipes), "invested": invested, "value": value,
+                "pnl": value - invested, "best": best}
+
+    def _log_summary(self) -> None:
+        s = self.summary()
+        best = f"{s['best'][0]} x{s['best'][1]:.2f}" if s["best"] else "—"
+        pct = (s["pnl"] / s["invested"] * 100) if s["invested"] else 0.0
+        logger.info("[SNIPER] billetes abiertos=%d | invertido=%.2f | valor=%.2f "
+                    "| P&L=%+.2f (%+.1f%%) | mejor=%s",
+                    s["open"], s["invested"], s["value"], s["pnl"], pct, best)
+
     # --- Bucle --------------------------------------------------------------------
 
     def run_forever(self) -> None:
         self.bootstrap()
         interval = self.cfg.poll_interval_seconds
+        last_summary = 0.0
         try:
             while True:
                 try:
@@ -191,6 +232,10 @@ class Sniper:
                         logger.info("[SNIPER] ¡NUEVA LISTADA detectada!: %s", symbol)
                         self.enter(symbol)
                     self.manage()
+                    # Resumen periódico (~cada 30 min) para observar la lotería.
+                    if self.snipes and time.time() - last_summary >= 1800:
+                        self._log_summary()
+                        last_summary = time.time()
                 except Exception:
                     logger.exception("[SNIPER] error en el ciclo; continúo")
                 time.sleep(interval)

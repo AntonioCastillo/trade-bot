@@ -99,7 +99,12 @@ class Engine:
 
         # Filtro de régimen: la cabeza solo entra si el mercado le favorece.
         if instrument.regimes:
-            regime = classify_regime(candles)
+            if instrument.regime_volatile_atr_pct is not None:
+                regime = classify_regime(
+                    candles, volatile_atr_pct=instrument.regime_volatile_atr_pct
+                )
+            else:
+                regime = classify_regime(candles)
             if regime not in instrument.regimes:
                 logger.debug("[%s] %s no opera en régimen '%s'", symbol, head, regime)
                 return

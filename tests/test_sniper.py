@@ -78,3 +78,49 @@ def test_paper_exit_on_take_profit(tmp_path):
     sniper.manage()
     assert sniper.snipes == []           # cerrado
     assert sniper._paper_balance > 1_000  # ganancia realizada
+
+
+def _lottery_sniper(tmp_path, exchange):
+    """Sniper en modo billete: TP x100, sin SL, sin timeout."""
+    ins = make_instrument()
+    config = make_config(ins, starting_balance=1_000)
+    config.sniper.baseline_path = str(tmp_path / "known.json")
+    config.sniper.position_size_pct = 0.01
+    config.sniper.take_profit_pct = 99.0      # x100
+    config.sniper.stop_loss_pct = 0.0         # sin stop
+    config.sniper.timeout_minutes = 0         # sin timeout
+    return Sniper(config, exchange, live=False)
+
+
+def test_lottery_mode_disables_sl_and_timeout(tmp_path):
+    ex = _FakeExchange(["BTC/USDT"], price=1.0)
+    sniper = _lottery_sniper(tmp_path, ex)
+    sniper.bootstrap()
+    sniper.enter("MOON/USDT")
+    snipe = sniper.snipes[0]
+    assert snipe.stop_loss == 0.0             # sin stop
+    assert snipe.deadline is None             # sin timeout
+    assert snipe.take_profit == 100.0         # x100 desde 1.0
+
+    # Se desploma un 90%: NO debe cerrar (se aguanta el billete).
+    ex.set_price(0.1)
+    sniper.manage()
+    assert len(sniper.snipes) == 1
+
+    # Llega al x100: cierra por take-profit.
+    ex.set_price(100.0)
+    sniper.manage()
+    assert sniper.snipes == []
+
+
+def test_summary_marks_open_tickets(tmp_path):
+    ex = _FakeExchange(["BTC/USDT"], price=1.0)
+    sniper = _lottery_sniper(tmp_path, ex)
+    sniper.bootstrap()
+    sniper.enter("MOON/USDT")             # invierte 1% de 1000 = 10
+    ex.set_price(0.5)                     # el billete cae a la mitad
+    s = sniper.summary()
+    assert s["open"] == 1
+    assert abs(s["invested"] - 10.0) < 1e-9
+    assert abs(s["value"] - 5.0) < 1e-9   # 10 -> 5
+    assert s["pnl"] < 0

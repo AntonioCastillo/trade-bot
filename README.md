@@ -21,9 +21,12 @@ capital. Arranca en **modo paper (simulación)** por defecto.
   - **scalping** (cruce EMA rápido) — entradas/salidas rápidas.
   - **breakout** (ruptura Donchian) — momentum-continuación.
   - **trend** (golden cross de medias) — seguimiento de tendencia en marco alto.
-- **Filtro de régimen** (`regimes:` por cabeza): activar cada estrategia solo en
-  su régimen (lateral / tendencia / volátil) vía ADX + ATR.
-- **Sniper de recién listadas** (experimental) — corre en el mismo proceso.
+- **Filtro de régimen** (`regimes:` por cabeza, ADX + ATR): disponible en el
+  motor, pero **medido y descartado** (restaba OOS — ver Hallazgos). El código
+  queda por si sirve a futuras cabezas.
+- **Sniper de recién listadas** (modo "billete de lotería") — corre en el mismo proceso.
+- **Carry de funding delta-neutral** con **ejecutor real de futuros** (dry-run por
+  defecto, apalancamiento 1x aislado, tope de notional, vigilancia de liquidación).
 - **Notificaciones por Telegram**: inicio/parada, cada operación (con **cabeza** y
   **saldo**), señal de vida 6h, fallos. Marca **🧪 [SIMULACIÓN]** o **🔴 [REAL]**.
 - **Log por cabeza** en `logs/heads/`, además del log global.
@@ -52,7 +55,9 @@ Market Data ──► Strategy ──► Risk Manager ──► Execution
 | `engine.py` | Cartera multi-cabeza; registra cada operación; equity mark-to-market. |
 | `daemon.py` | Runner autónomo: bucle resiliente, reset diario, informes, notifs, sniper. |
 | `notifier.py` | Notificaciones Telegram con prefijo de modo (SIMULACIÓN/REAL). |
-| `sniper.py` | Detector + entrada en recién listadas (experimental). |
+| `sniper.py` | Detector + entrada en recién listadas (modo lotería x100). |
+| `carry.py` / `carry_live.py` | Carry delta-neutral: contabilidad paper + ejecutor real (spot+perp). |
+| `execution/futures.py` | Pata corta de futuros (kucoinfutures): sizing en contratos, 1x aislado. |
 | `storage.py` | SQLite: `fills` + `closed_trades`. |
 | `reporting.py` / `metrics.py` | Informe + robustez (PF, drawdown, Sharpe). |
 | `backtester.py` | Backtest reutilizable (con mark-to-market de lo abierto). |
@@ -74,11 +79,24 @@ públicos. Las claves solo se usan en modo `live` (órdenes reales).
 `TELEGRAM_CHAT_ID` en `.env`. Si están, el bot avisa por Telegram en cada
 apertura y cierre. Si no, no pasa nada (todo queda en el log igualmente).
 
-**Sniper de recién listadas (experimental, alto riesgo):** activar con
-`sniper.enabled: true` en `config.yaml` y lanzar aparte con
-`python scripts/sniper.py`. Detecta nuevos pares */USDT y entra buscando el pump
-inicial. NO es validable con backtesting; úsalo solo con capital que puedas
-perder por completo.
+**Sniper de recién listadas (experimental, alto riesgo):** `sniper.enabled: true`
+en `config.yaml` (corre en el mismo proceso que el bot). Detecta nuevos pares
+*/USDT y entra buscando el pump. Configurado en modo **"billete de lotería"**:
+entrada pequeña (1%), objetivo **x100**, **sin stop-loss ni timeout** (SL y
+timeout se desactivan poniéndolos a 0) → se aguanta cada moneda esperando el
+pump; casi todas mueren, se apuesta a que una explote. El log saca un **resumen
+periódico** (mark-to-market de los billetes abiertos). NO es validable con
+backtesting y en paper es **optimista** (fill al precio de ticker); úsalo solo
+con capital que puedas perder por completo.
+
+**Carry de funding delta-neutral (real, futuros):** **el modo manda** — con
+`mode: paper` el carry es paper; con `mode: live` va **REAL** como el resto (nada
+se queda en paper mientras operas en real). En live necesita claves con permiso de
+**Futuros** (las mismas 3 variables del `.env`) y USDT en el monedero de futuros.
+Única salvaguarda: la 1ª vez en live arranca en **DRY-RUN** (registra las órdenes
+spot+perp con datos reales pero sin enviarlas); para operar de verdad exporta
+`TRADEBOT_CARRY_LIVE_CONFIRM="SI FUTUROS REAL"`. Antes de estrenar:
+`python scripts/carry_preflight.py` (solo-lectura: saldos, permisos, sizing).
 
 ## Uso
 
@@ -140,6 +158,9 @@ El informe incluye métricas de robustez: **profit factor**, **max drawdown** y
 python scripts/edge_scan.py 4h 3000     # ventaja bruta de cada señal vs coste
 python scripts/funding_scan.py          # funding-rate carry por perpetuo
 python scripts/funding_sim.py           # simula el carry delta-neutral (paper)
+python scripts/carry_threshold.py       # ¿renta el carry solo con funding alto? (barrido de umbrales)
+python scripts/carry_preflight.py       # preflight del carry real (solo-lectura: saldos/permisos/sizing)
+python scripts/regime_ab.py             # A/B del filtro de régimen (con gate vs sin gate)
 python scripts/verify_api.py            # verifica la API real con ~1 USD (round-trip)
 ```
 
@@ -175,17 +196,46 @@ comisiones.**
 | Enfoque | Veredicto |
 |---|---|
 | **trend-following @1d** (golden cross) | 🟢 Lo mejor: OOS **positivo** en BTC/ETH/XRP (PF>1), aunque muestras finas. |
+| **momentum @1d** (EMA + ruptura + ATR + volumen) | 🟢 Robusta OOS en majors (SOL/BNB/ADA/AVAX, PF>2). **En 1h-4h pierde** (el "sobreajuste" viejo era de intradía). Cableada: BNB/ADA. |
+| **breakout @1d** (Donchian) | 🟢 Robusta OOS en majors (SOL +26%, AVAX/BNB/ADA, PF>1.4). Pierde en 4h. Cableada: SOL/AVAX. |
 | **reversión @4h** (RSI<25 sobreventa profunda) | 🟡 Marginal: DOGE OOS +1.9%, resto breakeven. |
-| **funding-rate carry** (delta-neutral) | 🟡 Edge real pero **fino** (~3-9% anual en mercado quieto) y muy sensible a la ejecución del hedge; necesita futuros. Mejor en fase alcista. |
+| **funding-rate carry** (delta-neutral) | 🟡 A funding bajo (un dígito anual, el régimen normal) manda el **basis** (±3-8%), no el funding (~0.5%): es lotería, no edge. Solo tiene sentido con funding **muy alto** (>30% anual, euforia alcista). Umbral de entrada subido a 30%. |
+| **filtro de régimen** (ADX/ATR por cabeza) | ❌ **Probado y descartado** (A/B walk-forward, `regime_ab.py`): el gate RESTA — trend1d pasó de +10% a −2% OOS. Una estrategia que ya se auto-selecciona por régimen (golden cross) no mejora con un gate encima. |
 | momentum / breakout @1h-4h | ❌ Sobreajuste: buen IS, OOS negativo. |
-| volume_surge, scalping, grid @5m-15m | ❌ Sin edge / pierden por comisiones. Grid además tiene cola catastrófica (−72%). |
+| volume_surge, scalping, grid @5m-15m | ❌ Sin edge / pierden por comisiones (confirmado en vivo). Grid además tiene cola catastrófica (−72%). |
 | pairs ETH/BTC | ❌ El spread no cubre 2 comisiones y necesita futuros. |
 | señales sueltas (vela verde, sesión horaria, squeeze) | ❌ Sin ventaja bruta sobre el coste (medido con `edge_scan`). |
+
+**Núcleo actual tras podar lo que sangraba** (scalping/grid/volumen fuera): dos
+cabezas fundamentadas — **reversion4h** (XRP/DOGE) y **trend1d** (BTC/ETH) — más
+**carry** (selectivo, ≥30% funding) y **sniper** (lotería). Baja frecuencia a
+propósito.
 
 **Lección de método:** medir la ventaja BRUTA de una señal (`edge_scan.py`) antes
 de construir; validar SIEMPRE con walk-forward + mark-to-market (contar también
 las posiciones abiertas, o una estrategia que deja perdedoras abiertas parece
 rentable cuando no lo es).
+
+### ¿Con cuánto capital es rentable la hidra?
+
+Respuesta honesta: **la rentabilidad no es un problema de capital, es un problema
+de _edge_.** Ningún capital convierte una estrategia sin ventaja probada en
+rentable — solo escala el resultado (y si el edge es ~0 o negativo, escala las
+pérdidas). El capital solo arregla la **fricción operativa**:
+
+| Capital | Qué pasa |
+|---|---|
+| **< ~$100** | La hidra no funciona: mínimos de orden, el carry no puede ni 1 contrato, posiciones "polvo". Las comisiones dominan. |
+| **~$300–1.000** | La maquinaria corre limpia (cada cabeza dimensiona bien, el carry opera si fondeas futuros). Ideal para observar en real con poco riesgo. Rentabilidad esperada ≈ **plana**. |
+| **$10.000+** | La mecánica va perfecta, pero con el ~1%/año de edge fino de trend1d son ~$100/año, y no es fiable. |
+
+- Para que **funcione mecánicamente**: **~$300–500**.
+- Para que sea **rentable de verdad**: no hay tal cifra con las cabezas actuales;
+  el cuello de botella es el edge, no el capital.
+
+Trátalo como **banco de pruebas** con capital que puedas perder, no como fuente de
+ingresos. Escalar capital solo tiene sentido si aparece un edge **robusto** (OOS
+positivo, muestra amplia, en varias cabezas) — y no antes.
 
 ## De paper a live: checklist de seguridad
 
@@ -197,8 +247,9 @@ rentable cuando no lo es).
 
 ## Próximos pasos sugeridos
 
-- **Funding-rate carry en fase alcista** (cuando el funding sea alto) — el edge
-  real más prometedor; requiere ejecutor de futuros + gestión de margen.
+- **Estrenar el carry real en fase alcista** (funding >30%): el ejecutor de
+  futuros ya está construido (dry-run → real con triple confirmación); falta
+  fondear el monedero de futuros y probarlo cuando el funding suba.
 - **Afinar trend@1d** con más histórico/símbolos para firmar la muestra.
 - Salida por **tiempo** (`max_hold_bars`) por cabeza en el bucle live (ya está en
   el motor/backtester; falta exponerla en `config.yaml`).

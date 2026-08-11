@@ -84,6 +84,77 @@ def simulate_carry(
     )
 
 
+@dataclass
+class ThresholdCarrySim:
+    symbol: str
+    entry_pct: float           # umbral de ENTRADA (funding anualizado %)
+    exit_pct: float            # umbral de SALIDA (funding anualizado %)
+    periods: int               # periodos totales de la ventana
+    periods_in: int            # periodos con posición abierta
+    time_in_pct: float         # % del tiempo dentro del mercado
+    trips: int                 # nº de entradas/salidas (cada una cuesta un roundtrip)
+    funding_pct: float         # funding cobrado (solo mientras dentro)
+    basis_pct: float           # P&L por basis (solo mientras dentro)
+    cost_pct: float            # coste total de las patas (trips × roundtrip)
+    net_pct: float             # neto en la ventana
+    annualized_net_pct: float  # neto anualizado sobre TODA la ventana
+    avg_ann_in: float          # funding anualizado medio MIENTRAS dentro
+
+
+def simulate_threshold_carry(
+    symbol: str,
+    funding: list[float],
+    spot: list[float],
+    perp: list[float],
+    entry_pct: float,
+    exit_pct: float,
+    roundtrip_cost_pct: float = 0.32,
+) -> ThresholdCarrySim:
+    """Carry con GATE de funding: abre cuando el funding anualizado ≥ `entry_pct`
+    y cierra cuando cae por debajo de `exit_pct` (histéresis). Solo cobra funding
+    y sufre basis mientras está dentro; cada entrada carga un roundtrip de coste.
+
+    Con `entry_pct = None` (o muy bajo) equivale a estar siempre dentro (baseline).
+    Listas ya alineadas por timestamp de funding."""
+    n = min(len(funding), len(spot), len(perp))
+    in_pos = False
+    equity = 0.0
+    periods_in = trips = 0
+    total_funding = total_basis = 0.0
+    ann_in: list[float] = []
+
+    for i in range(n):
+        ann = funding[i] * PERIODS_PER_YEAR * 100
+        if not in_pos and ann >= entry_pct:
+            in_pos = True
+            trips += 1
+            equity -= roundtrip_cost_pct / 100      # coste de montar+deshacer
+        if in_pos:
+            equity += funding[i]
+            total_funding += funding[i]
+            if i > 0 and spot[i - 1] and perp[i - 1]:
+                basis = (spot[i] / spot[i - 1] - 1) - (perp[i] / perp[i - 1] - 1)
+                equity += basis
+                total_basis += basis
+            periods_in += 1
+            ann_in.append(ann)
+            if ann < exit_pct:
+                in_pos = False
+
+    days = n / 3.0
+    net = equity * 100
+    annualized_net = net * (365 / days) if days else 0.0
+    return ThresholdCarrySim(
+        symbol=symbol, entry_pct=entry_pct, exit_pct=exit_pct,
+        periods=n, periods_in=periods_in,
+        time_in_pct=(periods_in / n * 100) if n else 0.0, trips=trips,
+        funding_pct=total_funding * 100, basis_pct=total_basis * 100,
+        cost_pct=trips * roundtrip_cost_pct, net_pct=net,
+        annualized_net_pct=annualized_net,
+        avg_ann_in=(sum(ann_in) / len(ann_in)) if ann_in else 0.0,
+    )
+
+
 def analyze_funding(symbol: str, rates: list[float]) -> FundingResult:
     n = len(rates)
     if n == 0:

@@ -14,6 +14,7 @@ PERIODS_PER_YEAR: funding cada 8h -> 3/día.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -25,6 +26,11 @@ from .notifier import Notifier, NullNotifier
 logger = logging.getLogger(__name__)
 
 PERIODS_PER_YEAR = 3 * 365
+
+# Segunda confirmación (aparte de la del spot) para EJECUTAR futuros de verdad.
+# Sin ella, aun con mode=live, el ejecutor corre en DRY-RUN (no envía órdenes).
+CARRY_LIVE_CONFIRM_ENV = "TRADEBOT_CARRY_LIVE_CONFIRM"
+CARRY_LIVE_CONFIRM = "SI FUTUROS REAL"
 
 
 def annualized_pct(rate: float) -> float:
@@ -134,9 +140,37 @@ class CarryRunner:
         self.cfg = config.carry
         self.exchange = exchange
         self.notifier = notifier or NullNotifier()
-        self.mgr = CarryManager(self.cfg, config.risk.starting_balance)
+        self.mgr = self._build_manager()
         self._symbols = self.cfg.symbols or ["ETH/USDT", "XRP/USDT", "DOGE/USDT"]
         self._fut = None
+
+    def _build_manager(self):
+        """El MODO manda: en paper todo es paper; en live el carry va REAL como el
+        resto (nunca paper mientras el bot opera en real).
+
+        Única salvaguarda en live: la 1ª vez arranca en DRY-RUN (no envía órdenes,
+        pero usa balances/precios REALES) salvo que la variable de confirmación de
+        futuros esté puesta. Es staging de seguridad para un camino no probado, NO
+        contabilidad simulada."""
+        if self.config.mode != "live":
+            return CarryManager(self.cfg, self.config.risk.starting_balance)
+
+        from .carry_live import LiveCarryExecutor
+        from .execution.futures import FuturesBroker
+
+        confirmed = os.environ.get(CARRY_LIVE_CONFIRM_ENV, "").strip() == CARRY_LIVE_CONFIRM
+        dry_run = not confirmed
+        broker = FuturesBroker(self.config, leverage=self.cfg.leverage, dry_run=dry_run)
+        logger.warning("[CARRY] ejecutor REAL de futuros | modo=%s | apalancamiento=%sx | "
+                       "tope=%.0f USDT/pos", "REAL" if confirmed else "DRY-RUN (no envía)",
+                       self.cfg.leverage, self.cfg.max_notional_usdt)
+        if not confirmed:
+            logger.warning("[CARRY] 1ª vez en DRY-RUN (no envía). Para operar de verdad "
+                           "exporta %s=\"%s\"", CARRY_LIVE_CONFIRM_ENV, CARRY_LIVE_CONFIRM)
+        self.notifier.notify(
+            f"⚙️ <b>CARRY futuros</b> arrancado en {'🔴 REAL' if confirmed else '🧪 DRY-RUN'} "
+            f"(lev {self.cfg.leverage:g}x, tope {self.cfg.max_notional_usdt:.0f} USDT/pos)")
+        return LiveCarryExecutor(self.config, self.exchange, broker, self.notifier)
 
     def _futures(self):
         import ccxt
@@ -172,9 +206,19 @@ class CarryRunner:
                     self.notifier.notify(
                         f"🔴 <b>CARRY CIERRA</b> {spot_sym}\nanualizado {ann:+.1f}% | P&L {net:+.2f}")
 
+        # Vigilancia de liquidación (solo el ejecutor real la implementa).
+        monitor = getattr(self.mgr, "monitor", None)
+        if callable(monitor):
+            try:
+                monitor()
+            except Exception:
+                logger.exception("[CARRY] fallo en la vigilancia de liquidación")
+
         eq = self.mgr.equity(prices)
-        logger.info("[CARRY] equity paper %.2f | efectivo %.2f | posiciones %d",
-                    eq, self.mgr.balance, len(self.mgr.positions))
+        cash = getattr(self.mgr, "balance", None)
+        logger.info("[CARRY] equity %.2f | %s | posiciones %d", eq,
+                    f"efectivo {cash:.2f}" if cash is not None else "real/dry-run",
+                    len(self.mgr.positions))
 
     def run_forever(self) -> None:
         logger.info("[CARRY] runner iniciado (PAPER) | símbolos %s | umbral %.1f%% anual",

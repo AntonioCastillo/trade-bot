@@ -32,9 +32,12 @@ def main() -> None:
     once = len(sys.argv) > 1 and sys.argv[1] == "once"
     config = load_config()
     setup_logging(config.log_level)
+    # Etiqueta según el modo efectivo (paper, o futuros real/dry-run).
+    live_futures = config.mode == "live" and config.credentials.is_complete
+    tag = "🔴 [CARRY FUTUROS]" if live_futures else "🧪 [CARRY PAPER]"
     notifier = PrefixNotifier(
         build_notifier(config.credentials.telegram_token, config.credentials.telegram_chat_id),
-        "🧪 [CARRY PAPER]",
+        tag,
     )
     runner = CarryRunner(config, Exchange(config), notifier)
     if once:

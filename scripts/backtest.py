@@ -51,7 +51,8 @@ def main() -> None:
     for ins in config.instruments:
         symbol = ins.symbol
         try:
-            candles = exchange.fetch_ohlcv(symbol, config.timeframe, limit=limit)
+            # Cada cabeza con SU timeframe (no el global): trend1d=1d, volumen5m=5m…
+            candles = exchange.fetch_ohlcv(symbol, ins.timeframe, limit=limit)
         except Exception as e:
             print(f"[SKIP] {symbol}: no se pudieron descargar datos ({e})")
             continue

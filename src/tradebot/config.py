@@ -58,6 +58,10 @@ class CarryConfig:
     exit_annualized_pct: float = 0.0  # cerrar si cae por debajo (p.ej. funding negativo)
     poll_interval_seconds: int = 300
     fee_pct: float = 0.0008           # comisión por pata (aprox, taker con descuento)
+    # --- Ejecución REAL de futuros (activa sola con mode=live; riesgo de liquidación) ---
+    leverage: float = 1.0             # apalancamiento de la pata corta (1x = liquidación lejísimos)
+    max_notional_usdt: float = 50.0   # tope DURO de USDT por posición (por pata)
+    liquidation_buffer_pct: float = 0.15  # cierre de emergencia si el precio queda a <15% de la liquidación
 
 
 @dataclass
@@ -74,6 +78,7 @@ class Instrument:
     trailing_stop_pct: float = 0.0
     max_concurrent_per_symbol: int = 1   # >1 para grid (varios peldaños a la vez)
     regimes: list[str] = field(default_factory=list)  # regímenes en los que opera; vacío = siempre
+    regime_volatile_atr_pct: float | None = None  # umbral ATR% para "volatile" (None=default 2%)
     timeframe: str = "1h"                # marco de vela de ESTA cabeza
 
 
@@ -169,6 +174,7 @@ def _build_instruments(
                     trailing_stop_pct=overrides.get("trailing_stop_pct", 0.0),
                     max_concurrent_per_symbol=cat.get("max_concurrent_per_symbol", 1),
                     regimes=list(cat.get("regimes") or []),
+                    regime_volatile_atr_pct=cat.get("regime_volatile_atr_pct"),
                     timeframe=cat.get("timeframe") or default_timeframe,
                 )
             )

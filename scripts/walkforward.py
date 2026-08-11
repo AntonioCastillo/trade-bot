@@ -61,7 +61,8 @@ def main() -> None:
 
     for ins in config.instruments:
         try:
-            candles = exchange.fetch_ohlcv_history(ins.symbol, config.timeframe, limit)
+            # Cada cabeza con SU timeframe (no el global): trend1d=1d, volumen5m=5m…
+            candles = exchange.fetch_ohlcv_history(ins.symbol, ins.timeframe, limit)
         except Exception as e:
             print(f"{ins.symbol:12} SKIP: {e}")
             continue
