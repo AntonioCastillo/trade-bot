@@ -133,12 +133,14 @@ def _maybe_start_publisher(config: Config, engine: Engine) -> threading.Thread |
 
     def _loop() -> None:
         from .publisher import publish_to_gist
-        from .status import build_status, merge_sniper
+        from .status import load_merged
         gist_id = _read_gist_id()
         notified = False
         while True:
             try:
-                status = merge_sniper(build_status(engine, config))
+                # Leemos el JSON que escribe el HILO PRINCIPAL (no tocamos la BD
+                # desde este hilo: SQLite no permite compartir conexión entre hilos).
+                status = load_merged()
                 res = publish_to_gist(status, token, gist_id)
                 if res["created"]:
                     gist_id = res["id"]
@@ -153,6 +155,8 @@ def _maybe_start_publisher(config: Config, engine: Engine) -> threading.Thread |
                         f"URL: {res['raw_url']}")
                     logger.info("Status publicado en: %s", res["raw_url"])
                     notified = True
+            except FileNotFoundError:
+                logger.info("Aún no hay data/status.json; publicaré cuando exista")
             except Exception:
                 logger.exception("Fallo publicando el status; reintento en el próximo ciclo")
             time.sleep(PUBLISH_INTERVAL_SECONDS)
@@ -290,6 +294,12 @@ def run_forever(
     _maybe_first_run_api_check(engine, config)
     _maybe_start_sniper(config, engine.notifier)
     _maybe_start_carry(config, engine.notifier)
+    # Deja un status.json inicial (hilo principal) para que el publicador ya tenga
+    # qué subir en su primera vuelta, sin esperar al primer informe.
+    try:
+        write_status(engine, config)
+    except Exception:
+        logger.warning("No pude escribir el status inicial")
     _maybe_start_publisher(config, engine)
 
     # Fija el cortafuegos de pérdida diaria contra el equity REAL de arranque
