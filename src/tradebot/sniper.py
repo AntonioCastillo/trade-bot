@@ -69,6 +69,8 @@ class Sniper:
         # intentos. Evita perder para siempre las monedas más nuevas (el objetivo).
         self.pending: dict[str, int] = {}
         self._paper_balance = config.risk.starting_balance
+        self.snipes_path = "data/snipes.json"   # persistencia de billetes (reinicios)
+        self._snipes_dirty = False
 
     MAX_ENTRY_RETRIES = 20   # ~20 ciclos (p.ej. 10 min a 30s) antes de rendirse
 
@@ -83,13 +85,56 @@ class Sniper:
         else:
             self.known = self.exchange.market_symbols()
             self._save_baseline()
-        logger.info("Sniper listo | %d símbolos en línea base | modo=%s",
-                    len(self.known), "LIVE" if self.live else "PAPER")
+        self._load_snipes()   # readopta billetes abiertos de una corrida anterior
+        logger.info("Sniper listo | %d símbolos en línea base | %d billetes | modo=%s",
+                    len(self.known), len(self.snipes), "LIVE" if self.live else "PAPER")
 
     def _save_baseline(self) -> None:
         path = Path(self.cfg.baseline_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(sorted(self.known)), encoding="utf-8")
+
+    # --- Persistencia de billetes (reinicio seguro) -------------------------------
+
+    def _save_snipes(self) -> None:
+        """Vuelca los billetes abiertos (y el efectivo simulado) a disco, para no
+        perderlos en un reinicio. Clave en la lotería: aguanta muchos sin stop."""
+        p = Path(self.snipes_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "paper_balance": self._paper_balance,
+            "snipes": [
+                {"symbol": s.symbol, "amount": s.amount, "entry_price": s.entry_price,
+                 "take_profit": s.take_profit, "stop_loss": s.stop_loss,
+                 "deadline": s.deadline.isoformat() if s.deadline else None,
+                 "invested": s.invested}
+                for s in self.snipes
+            ],
+        }
+        p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    def _load_snipes(self) -> None:
+        p = Path(self.snipes_path)
+        if not p.exists():
+            return
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            logger.warning("[SNIPER] no pude leer los billetes persistidos; empiezo vacío")
+            return
+        restored: list[Snipe] = []
+        for d in data.get("snipes", []):
+            dl = d.get("deadline")
+            restored.append(Snipe(
+                symbol=d["symbol"], amount=d["amount"], entry_price=d["entry_price"],
+                take_profit=d["take_profit"], stop_loss=d["stop_loss"],
+                deadline=datetime.fromisoformat(dl) if dl else None,
+                invested=d.get("invested", 0.0),
+            ))
+        self.snipes = restored
+        # En paper restauramos el efectivo; en live el saldo es el real del exchange.
+        if not self.live and "paper_balance" in data:
+            self._paper_balance = float(data["paper_balance"])
 
     # --- Detección y entrada ------------------------------------------------------
 
@@ -156,6 +201,7 @@ class Sniper:
             f"Entrada: {price:.8f}  |  {capital:.2f} {self.quote}\n"
             f"Objetivo: x{mult:.0f} ({take_profit:.8f})  |  {sl_txt}  |  {to_txt}"
         )
+        self._snipes_dirty = True
         return True
 
     # --- Gestión de salidas -------------------------------------------------------
@@ -202,6 +248,7 @@ class Sniper:
             f"{emoji} <b>SNIPE cerrado</b> {s.symbol} ({reason})\n"
             f"P&L: {pnl:+.2f} {self.quote} ({pnl_pct:+.2f}%)"
         )
+        self._snipes_dirty = True
 
     # --- Resumen (mark-to-market de los billetes abiertos) ------------------------
 
@@ -269,6 +316,13 @@ class Sniper:
                                                "lo dejo", symbol, self.pending[symbol])
                                 del self.pending[symbol]
                     self.manage()
+                    # Persistir billetes si hubo aperturas/cierres (reinicio seguro).
+                    if self._snipes_dirty:
+                        try:
+                            self._save_snipes()
+                        except Exception:
+                            logger.warning("[SNIPER] no pude persistir los billetes")
+                        self._snipes_dirty = False
                     # Resumen periódico (~cada 30 min) para observar la lotería.
                     if self.snipes and time.time() - last_summary >= 1800:
                         self._log_summary()

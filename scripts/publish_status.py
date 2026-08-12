@@ -28,21 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from dotenv import load_dotenv  # noqa: E402
 
+from tradebot.publisher import publish_to_gist  # noqa: E402
 from tradebot.status import load_merged  # noqa: E402
-
-API = "https://api.github.com"
-FILENAME = "tradebot_status.json"
-
-
-def _req(url: str, token: str, method: str, payload: dict | None = None) -> dict:
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("User-Agent", "tradebot-status")
-    req.add_header("X-GitHub-Api-Version", "2022-11-28")
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read().decode())
 
 
 def main() -> None:
@@ -58,28 +45,18 @@ def main() -> None:
         print("No existe data/status.json todavía. Arranca el bot y espera un informe.")
         sys.exit(1)
 
-    content = json.dumps(status, indent=2, ensure_ascii=False)
-    files = {"files": {FILENAME: {"content": content}}}
-    gist_id = os.getenv("TRADEBOT_GIST_ID", "").strip()
-
+    gist_id = os.getenv("TRADEBOT_GIST_ID", "").strip() or None
     try:
-        if gist_id:
-            resp = _req(f"{API}/gists/{gist_id}", token, "PATCH", files)
-        else:
-            resp = _req(f"{API}/gists", token, "POST",
-                        {"description": "tradebot status (secreto)", "public": False, **files})
+        res = publish_to_gist(status, token, gist_id)
     except urllib.error.HTTPError as e:
         print(f"Error de la API de GitHub: {e.code} {e.reason}\n{e.read().decode()[:300]}")
         sys.exit(2)
 
-    gid = resp["id"]
-    login = resp["owner"]["login"]
-    raw = f"https://gist.githubusercontent.com/{login}/{gid}/raw/{FILENAME}"
-    print(f"Status publicado (gist {gid}).")
-    print(f"URL raw (pásamela para que la lea):\n  {raw}")
-    if not gist_id:
+    print(f"Status publicado (gist {res['id']}).")
+    print(f"URL raw (pásamela para que la lea):\n  {res['raw_url']}")
+    if res["created"]:
         print(f"\n>>> Añade esto a .env para ACTUALIZAR siempre el mismo gist:\n"
-              f"    TRADEBOT_GIST_ID={gid}")
+              f"    TRADEBOT_GIST_ID={res['id']}")
 
 
 if __name__ == "__main__":

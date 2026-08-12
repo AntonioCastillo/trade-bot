@@ -79,12 +79,14 @@ class Engine:
                 order = Order(pos.symbol, close_side, pos.amount, current_price, reason="timeout")
                 if self._close_position(pos, order):
                     continue
+                self.storage.update_open_position(pos)
                 still_open.append(pos)
                 continue
-            # 2) Salida por TP / SL / trailing.
+            # 2) Salida por TP / SL / trailing (evaluate_exit muta trailing/peak).
             decision = self.risk.evaluate_exit(pos, current_price)
             if decision.order is not None and self._close_position(pos, decision.order):
                 continue  # cerrada con éxito -> no se mantiene
+            self.storage.update_open_position(pos)   # persistir trailing/bars_held
             still_open.append(pos)
         self.positions = still_open
 
@@ -126,6 +128,8 @@ class Engine:
             fill.filled_price, fill.fee, signal.reason,
         )
         self.positions.append(position)
+        self.storage.save_open_position(position)   # persistir para reinicios
+        self._save_cash()
         quote = self.config.risk.quote_currency
         equity = self.equity()
         logger.info(
@@ -166,6 +170,8 @@ class Engine:
             pnl_pct=pnl_pct, exit_reason=close_order.reason, opened_at=pos.opened_at,
         )
         self.storage.record_closed_trade(trade)
+        self.storage.delete_open_position(pos)   # ya no está abierta
+        self._save_cash()
         self.closed_trades.append(trade)
         head = f"{pos.category}/{pos.strategy_name}"
         quote = self.config.risk.quote_currency
@@ -200,6 +206,86 @@ class Engine:
                 f.write(f"{datetime.now(timezone.utc).isoformat()} | {text}\n")
         except Exception:
             logger.debug("No pude escribir el log de la cabeza %s", category)
+
+    # --- Persistencia / readopción de posiciones -----------------------------------
+
+    def _save_cash(self) -> None:
+        """Guarda el efectivo SIMULADO (solo paper; en live el saldo es real y no
+        hace falta persistirlo — evita un fetch de balance por cada operación)."""
+        if not hasattr(self.execution, "set_balance"):
+            return
+        try:
+            self.storage.set_state("paper_balance", self.execution.get_balance())
+        except Exception:
+            logger.debug("No pude persistir el efectivo simulado")
+
+    def load_positions(self) -> int:
+        """Readopta las posiciones abiertas persistidas para seguir gestionándolas
+        tras un reinicio (clave en live: si no, quedarían huérfanas). En paper
+        restaura también el efectivo simulado para que el equity cuadre. En live
+        RECONCILIA contra el saldo real de KuCoin (descarta/ajusta lo que no cuadre)."""
+        self.positions = self.storage.load_open_positions()
+        setter = getattr(self.execution, "set_balance", None)   # solo el motor paper
+        cash = self.storage.get_state("paper_balance")
+        if callable(setter) and cash is not None:
+            setter(cash)
+
+        if self.config.mode == "live" and self.exchange is not None and self.positions:
+            self._reconcile_live()
+
+        if self.positions:
+            logger.info(
+                "Readoptadas %d posiciones abiertas persistidas: %s",
+                len(self.positions),
+                ", ".join(f"{p.category}/{p.symbol}" for p in self.positions),
+            )
+        return len(self.positions)
+
+    # Tolerancias de reconciliación (relativas al importe registrado).
+    RECONCILE_GONE_RATIO = 0.05    # saldo real < 5% del registrado -> la posición ya no existe
+    RECONCILE_SHRINK_RATIO = 0.95  # saldo real < 95% -> ajustar a lo que de verdad hay
+
+    def _reconcile_live(self) -> None:
+        """Compara cada posición readoptada con el saldo REAL del activo base en la
+        cuenta. Si el activo ya no está (vendido a mano, nunca se llenó…) la descarta;
+        si hay menos de lo registrado, la ajusta; avisa de cada descuadre."""
+        try:
+            balances = self.exchange.fetch_balances_total()
+        except Exception:
+            logger.exception("Reconciliación: no pude leer los saldos reales; readopto sin reconciliar")
+            return
+
+        kept: list[Position] = []
+        for pos in self.positions:
+            base = pos.symbol.split("/")[0]
+            real = balances.get(base, 0.0)
+            if pos.amount <= 0:
+                continue
+            ratio = real / pos.amount
+
+            if ratio < self.RECONCILE_GONE_RATIO:
+                logger.warning(
+                    "Reconciliación: %s registrada con %.8f %s pero en la cuenta hay %.8f "
+                    "-> DESCARTADA (vendida a mano o nunca llenó)", pos.symbol, pos.amount, base, real)
+                self.storage.delete_open_position(pos)
+                self.notifier.notify(
+                    f"⚠️ <b>Reconciliación</b> {pos.symbol}: no hay saldo ({real:.8f} {base}); "
+                    f"posición descartada (no la gestiono).")
+                continue
+
+            if ratio < self.RECONCILE_SHRINK_RATIO:
+                logger.warning(
+                    "Reconciliación: %s registrada %.8f %s, real %.8f -> AJUSTO a %.8f",
+                    pos.symbol, pos.amount, base, real, real)
+                self.notifier.notify(
+                    f"⚠️ <b>Reconciliación</b> {pos.symbol}: ajusto tamaño "
+                    f"{pos.amount:.8f} → {real:.8f} {base} (saldo real menor).")
+                pos.amount = real
+                self.storage.update_open_position(pos)
+
+            kept.append(pos)
+
+        self.positions = kept
 
     # --- Cartera -------------------------------------------------------------------
 

@@ -49,3 +49,30 @@ def test_load_merged_merges_sniper(tmp_path):
     merged = status.load_merged(str(sp), str(sn))
     assert merged["equity"] == 1000.0
     assert merged["sniper"]["open"] == 3
+
+
+def test_merge_sniper_optional(tmp_path):
+    sp = tmp_path / "sniper.json"
+    sp.write_text(json.dumps({"open": 2}))
+    assert status.merge_sniper({"mode": "paper"}, str(sp))["sniper"]["open"] == 2
+    assert "sniper" not in status.merge_sniper({"mode": "paper"}, str(tmp_path / "nope.json"))
+
+
+def test_publish_to_gist_create_then_update(monkeypatch):
+    from tradebot import publisher
+
+    calls = []
+
+    def _fake_req(url, token, method, payload=None):
+        calls.append((url, method))
+        return {"id": "abc123", "owner": {"login": "toni"}}
+
+    monkeypatch.setattr(publisher, "_req", _fake_req)
+
+    res = publisher.publish_to_gist({"x": 1}, "tok", None)     # crear
+    assert res["created"] is True and res["id"] == "abc123"
+    assert res["raw_url"].endswith("/toni/abc123/raw/tradebot_status.json")
+    assert calls[-1][1] == "POST"
+
+    res2 = publisher.publish_to_gist({"x": 2}, "tok", "abc123")  # actualizar
+    assert res2["created"] is False and calls[-1][1] == "PATCH"

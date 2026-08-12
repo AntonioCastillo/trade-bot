@@ -49,3 +49,7 @@ class PaperExecutionEngine:
 
     def get_balance(self) -> float:
         return self._balance
+
+    def set_balance(self, balance: float) -> None:
+        """Restaura el efectivo simulado (al readoptar posiciones tras un reinicio)."""
+        self._balance = float(balance)

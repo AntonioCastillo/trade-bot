@@ -74,6 +74,7 @@ class Position:
     peak_price: float = 0.0          # mejor precio alcanzado (para el trailing)
     bars_held: int = 0               # nº de velas que lleva abierta (salida por tiempo)
     opened_at: datetime = field(default_factory=_utcnow)
+    db_id: int = 0                   # id de su fila en open_positions (0 = no persistida)
 
     def unrealized_pnl(self, current_price: float) -> float:
         direction = 1 if self.side is Side.BUY else -1

@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from .models import ClosedTrade, Fill
+from .models import ClosedTrade, Fill, Position, Side
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS fills (
@@ -41,6 +41,29 @@ CREATE TABLE IF NOT EXISTS closed_trades (
     opened_at     TEXT NOT NULL,
     closed_at     TEXT NOT NULL,
     duration_s    REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS open_positions (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol            TEXT NOT NULL,
+    side              TEXT NOT NULL,
+    amount            REAL NOT NULL,
+    entry_price       REAL NOT NULL,
+    stop_loss         REAL NOT NULL,
+    take_profit       REAL NOT NULL,
+    category          TEXT NOT NULL,
+    strategy          TEXT NOT NULL,
+    entry_fee         REAL NOT NULL,
+    reason            TEXT,
+    trailing_stop_pct REAL NOT NULL,
+    peak_price        REAL NOT NULL,
+    bars_held         INTEGER NOT NULL,
+    opened_at         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS state (
+    key   TEXT PRIMARY KEY,
+    value REAL NOT NULL
 );
 """
 
@@ -83,6 +106,75 @@ class Storage:
             ),
         )
         self._conn.commit()
+
+    # --- Posiciones abiertas (persistencia para reinicios) -------------------------
+
+    def save_open_position(self, pos: Position) -> int:
+        """Inserta la posición abierta y le fija `db_id` (para luego actualizar/borrar)."""
+        cur = self._conn.execute(
+            "INSERT INTO open_positions (symbol, side, amount, entry_price, stop_loss,"
+            " take_profit, category, strategy, entry_fee, reason, trailing_stop_pct,"
+            " peak_price, bars_held, opened_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                pos.symbol, pos.side.value, pos.amount, pos.entry_price, pos.stop_loss,
+                pos.take_profit, pos.category, pos.strategy_name, pos.entry_fee, pos.reason,
+                pos.trailing_stop_pct, pos.peak_price, pos.bars_held, pos.opened_at.isoformat(),
+            ),
+        )
+        self._conn.commit()
+        pos.db_id = int(cur.lastrowid)
+        return pos.db_id
+
+    def update_open_position(self, pos: Position) -> None:
+        """Persiste los campos que mutan mientras vive (trailing, velas aguantadas y
+        el importe, que puede ajustarse en la reconciliación con el saldo real)."""
+        if not pos.db_id:
+            return
+        self._conn.execute(
+            "UPDATE open_positions SET stop_loss=?, peak_price=?, bars_held=?, amount=? WHERE id=?",
+            (pos.stop_loss, pos.peak_price, pos.bars_held, pos.amount, pos.db_id),
+        )
+        self._conn.commit()
+
+    def delete_open_position(self, pos: Position) -> None:
+        if not pos.db_id:
+            return
+        self._conn.execute("DELETE FROM open_positions WHERE id=?", (pos.db_id,))
+        self._conn.commit()
+
+    def load_open_positions(self) -> list[Position]:
+        """Reconstruye las posiciones abiertas persistidas (para readoptarlas al arrancar)."""
+        from datetime import datetime
+
+        rows = self._conn.execute("SELECT * FROM open_positions ORDER BY id").fetchall()
+        out: list[Position] = []
+        for r in rows:
+            pos = Position(
+                symbol=r["symbol"], side=Side(r["side"]), amount=r["amount"],
+                entry_price=r["entry_price"], stop_loss=r["stop_loss"],
+                take_profit=r["take_profit"], category=r["category"],
+                strategy_name=r["strategy"], entry_fee=r["entry_fee"], reason=r["reason"] or "",
+                trailing_stop_pct=r["trailing_stop_pct"], peak_price=r["peak_price"],
+                bars_held=int(r["bars_held"]), opened_at=datetime.fromisoformat(r["opened_at"]),
+                db_id=int(r["id"]),
+            )
+            out.append(pos)
+        return out
+
+    # --- Estado clave/valor (p.ej. efectivo simulado en paper) ---------------------
+
+    def set_state(self, key: str, value: float) -> None:
+        self._conn.execute(
+            "INSERT INTO state (key, value) VALUES (?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, float(value)),
+        )
+        self._conn.commit()
+
+    def get_state(self, key: str, default: float | None = None) -> float | None:
+        row = self._conn.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
+        return float(row["value"]) if row else default
 
     # --- Consulta ------------------------------------------------------------------
 

@@ -71,15 +71,19 @@ def write_status(engine, config, path: str = DEFAULT_STATUS_PATH) -> None:
                  encoding="utf-8")
 
 
-def load_merged(status_path: str = DEFAULT_STATUS_PATH,
-                sniper_path: str = DEFAULT_SNIPER_PATH) -> dict:
-    """Carga el status.json y le fusiona el sniper_status.json si existe.
-    Lo usa el publicador (que corre aparte del bot)."""
-    data = json.loads(Path(status_path).read_text(encoding="utf-8"))
+def merge_sniper(status: dict, sniper_path: str = DEFAULT_SNIPER_PATH) -> dict:
+    """Añade al status el resumen del sniper (que su hilo deja en JSON), si existe."""
     sp = Path(sniper_path)
     if sp.exists():
         try:
-            data["sniper"] = json.loads(sp.read_text(encoding="utf-8"))
+            status["sniper"] = json.loads(sp.read_text(encoding="utf-8"))
         except Exception:
             pass
-    return data
+    return status
+
+
+def load_merged(status_path: str = DEFAULT_STATUS_PATH,
+                sniper_path: str = DEFAULT_SNIPER_PATH) -> dict:
+    """Carga el status.json de disco y le fusiona el sniper. Para el script suelto."""
+    data = json.loads(Path(status_path).read_text(encoding="utf-8"))
+    return merge_sniper(data, sniper_path)

@@ -157,6 +157,25 @@ def test_fetch_last_price_fallback_and_clean_error():
         ex.fetch_last_price("X/USDT")
 
 
+def test_sniper_persists_and_reloads_snipes(tmp_path):
+    ex = _FakeExchange(["BTC/USDT"], price=2.0)
+    s1 = _lottery_sniper(tmp_path, ex)
+    s1.snipes_path = str(tmp_path / "snipes.json")
+    s1.bootstrap()
+    s1.enter("MOON/USDT")
+    s1._save_snipes()
+    bal = s1._paper_balance
+
+    # Reinicio: nueva instancia recarga los billetes y el efectivo.
+    s2 = _lottery_sniper(tmp_path, ex)
+    s2.snipes_path = str(tmp_path / "snipes.json")
+    s2._load_snipes()
+    assert len(s2.snipes) == 1
+    assert s2.snipes[0].symbol == "MOON/USDT"
+    assert s2.snipes[0].deadline is None          # modo lotería: sin timeout, se preserva
+    assert abs(s2._paper_balance - bal) < 1e-9
+
+
 def test_summary_marks_open_tickets(tmp_path):
     ex = _FakeExchange(["BTC/USDT"], price=1.0)
     sniper = _lottery_sniper(tmp_path, ex)

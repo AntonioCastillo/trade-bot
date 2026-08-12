@@ -12,6 +12,7 @@ Pensado para lanzarse con `python scripts/run.py` y olvidarse.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -33,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_LOG_FILE = "logs/tradebot.log"
 DEFAULT_REPORT_FILE = "data/report.txt"
+
+# Publicación automática del status a un gist secreto (cada 15 min, desde el bot).
+GIST_ID_FILE = "data/.gist_id"
+PUBLISH_INTERVAL_SECONDS = 900
 
 # Verificación de API en el PRIMER arranque live (solo una vez).
 API_CHECK_MARKER = "data/.api_verified"
@@ -106,6 +111,55 @@ def _maybe_start_carry(config: Config, notifier: Notifier) -> threading.Thread |
     thread.start()
     # El propio runner ya loguea si es PAPER, DRY-RUN o REAL según config+confirmación.
     logger.info("Carry (funding) lanzado en segundo plano (mismo proceso)")
+    return thread
+
+
+def _maybe_start_publisher(config: Config, engine: Engine) -> threading.Thread | None:
+    """Publica el status a un gist secreto cada PUBLISH_INTERVAL_SECONDS, en un hilo
+    del PROPIO bot (no hace falta cron ni timer). Resiliente: si GitHub falla, el bot
+    sigue. Recuerda el gist id en data/.gist_id, así los reinicios actualizan el mismo
+    gist sin tocar el .env. Se activa solo si hay GITHUB_TOKEN en el entorno."""
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if not token:
+        logger.info("Sin GITHUB_TOKEN: el bot no publicará el status (opcional).")
+        return None
+
+    def _read_gist_id() -> str | None:
+        gid = os.environ.get("TRADEBOT_GIST_ID", "").strip()
+        if gid:
+            return gid
+        p = Path(GIST_ID_FILE)
+        return p.read_text(encoding="utf-8").strip() if p.exists() else None
+
+    def _loop() -> None:
+        from .publisher import publish_to_gist
+        from .status import build_status, merge_sniper
+        gist_id = _read_gist_id()
+        notified = False
+        while True:
+            try:
+                status = merge_sniper(build_status(engine, config))
+                res = publish_to_gist(status, token, gist_id)
+                if res["created"]:
+                    gist_id = res["id"]
+                    try:
+                        Path(GIST_ID_FILE).parent.mkdir(parents=True, exist_ok=True)
+                        Path(GIST_ID_FILE).write_text(gist_id, encoding="utf-8")
+                    except Exception:
+                        logger.warning("No pude guardar %s", GIST_ID_FILE)
+                if not notified:
+                    engine.notifier.notify(
+                        f"📡 <b>Status publicándose</b> (cada {PUBLISH_INTERVAL_SECONDS // 60} min)\n"
+                        f"URL: {res['raw_url']}")
+                    logger.info("Status publicado en: %s", res["raw_url"])
+                    notified = True
+            except Exception:
+                logger.exception("Fallo publicando el status; reintento en el próximo ciclo")
+            time.sleep(PUBLISH_INTERVAL_SECONDS)
+
+    thread = threading.Thread(target=_loop, name="publisher", daemon=True)
+    thread.start()
+    logger.info("Publicador de status lanzado (cada %ds)", PUBLISH_INTERVAL_SECONDS)
     return thread
 
 
@@ -196,6 +250,14 @@ def run_forever(
         return
     if config.mode == "live":
         _live_preflight(engine, config, symbols)
+
+    # Readopta las posiciones abiertas persistidas (reinicio seguro): en vez de
+    # dejarlas huérfanas, el motor sigue gestionando su SL/TP/trailing.
+    try:
+        engine.load_positions()
+    except Exception:
+        logger.exception("No pude readoptar posiciones persistidas al arrancar")
+
     interval = config.engine.poll_interval_seconds
     report_interval = config.engine.report_interval_seconds
     current_day = datetime.now(timezone.utc).date()
@@ -228,6 +290,7 @@ def run_forever(
     _maybe_first_run_api_check(engine, config)
     _maybe_start_sniper(config, engine.notifier)
     _maybe_start_carry(config, engine.notifier)
+    _maybe_start_publisher(config, engine)
 
     # Fija el cortafuegos de pérdida diaria contra el equity REAL de arranque
     # (en live es el balance de la cuenta, no el starting_balance del config).

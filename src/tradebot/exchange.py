@@ -133,6 +133,13 @@ class Exchange:
         balance = self._client.fetch_balance()
         return float(balance.get("free", {}).get(currency, 0.0))
 
+    def fetch_balances_total(self) -> dict[str, float]:
+        """Saldo TOTAL (libre + bloqueado) por moneda. Para reconciliar posiciones
+        readoptadas contra lo que de verdad hay en la cuenta."""
+        balance = self._client.fetch_balance()
+        total = balance.get("total") or {}
+        return {k: float(v) for k, v in total.items() if v}
+
     # --- Metadatos de mercado (límites y precisión) --------------------------------
 
     def market_limits(self, symbol: str) -> dict:
