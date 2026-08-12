@@ -1,5 +1,7 @@
 """Persistencia y readopción de posiciones abiertas (reinicio seguro)."""
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from conftest import make_config, make_instrument
@@ -62,6 +64,17 @@ def test_storage_open_position_roundtrip(tmp_path):
     st.delete_open_position(pos)
     assert st.load_open_positions() == []
     st.close()
+
+
+def test_effective_db_path_separates_by_mode():
+    cfg = make_config(make_instrument())
+    cfg.db_path = "data/tradebot.db"
+    cfg.mode = "paper"
+    assert Path(cfg.effective_db_path()).name == "tradebot_paper.db"
+    cfg.mode = "live"
+    assert Path(cfg.effective_db_path()).name == "tradebot_live.db"
+    cfg.db_path = ":memory:"
+    assert cfg.effective_db_path() == ":memory:"
 
 
 def test_state_key_value(tmp_path):

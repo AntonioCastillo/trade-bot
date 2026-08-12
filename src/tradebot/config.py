@@ -141,6 +141,14 @@ class Config:
                 return ins
         raise KeyError(symbol)
 
+    def effective_db_path(self) -> str:
+        """BD separada por modo: paper y live NUNCA mezclan histórico.
+        data/tradebot.db -> data/tradebot_paper.db o data/tradebot_live.db."""
+        if self.db_path == ":memory:":
+            return self.db_path
+        p = Path(self.db_path)
+        return str(p.with_name(f"{p.stem}_{self.mode}{p.suffix}"))
+
 
 def _build_instruments(
     universe: list[dict], risk: RiskConfig, default_timeframe: str

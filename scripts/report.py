@@ -24,7 +24,7 @@ from tradebot.storage import Storage  # noqa: E402
 
 def main() -> None:
     config = load_config()
-    db_path = sys.argv[1] if len(sys.argv) > 1 else config.db_path
+    db_path = sys.argv[1] if len(sys.argv) > 1 else config.effective_db_path()
     if not Path(db_path).exists():
         print(f"No existe la base de datos: {db_path}")
         print("Ejecuta antes una simulación (scripts/backtest.py o scripts/run.py).")

@@ -262,6 +262,23 @@ def run_forever(
     except Exception:
         logger.exception("No pude readoptar posiciones persistidas al arrancar")
 
+    # En LIVE, ancla el starting_balance al saldo REAL del exchange la PRIMERA vez
+    # (y lo persiste): así el % de retorno del informe/status es coherente con el
+    # dinero real y no se resetea en cada reinicio. En paper se usa el del config.
+    if config.mode == "live":
+        ref = engine.storage.get_state("live_starting_balance")
+        if ref is None:
+            try:
+                ref = engine.equity()
+                engine.storage.set_state("live_starting_balance", ref)
+                logger.info("Starting_balance anclado al saldo real de arranque: %.2f %s",
+                            ref, config.risk.quote_currency)
+            except Exception:
+                logger.warning("No pude leer el saldo real para anclar el starting_balance")
+                ref = None
+        if ref is not None:
+            config.risk.starting_balance = ref
+
     interval = config.engine.poll_interval_seconds
     report_interval = config.engine.report_interval_seconds
     current_day = datetime.now(timezone.utc).date()

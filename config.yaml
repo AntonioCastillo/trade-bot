@@ -132,6 +132,8 @@ carry:
   liquidation_buffer_pct: 0.15  # cierre de emergencia si el precio queda a <15% de la liquidación
 
 storage:
+  # Se separa por MODO automáticamente: data/tradebot_paper.db y
+  # data/tradebot_live.db (paper y live nunca mezclan histórico).
   db_path: data/tradebot.db
 
 logging:

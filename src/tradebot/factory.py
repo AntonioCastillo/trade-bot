@@ -45,7 +45,7 @@ def build_engine(config: Config | None = None, log_file: str | None = None) -> E
     risk = RiskManager(config.risk)
     risk.reset_day(config.risk.starting_balance)
     execution = build_execution_engine(config, exchange)
-    storage = Storage(config.db_path)
+    storage = Storage(config.effective_db_path())   # BD separada por modo (paper/live)
     tag = "🔴 [REAL]" if config.mode == "live" else "🧪 [SIMULACIÓN]"
     notifier = PrefixNotifier(
         build_notifier(config.credentials.telegram_token,
