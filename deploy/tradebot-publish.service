@@ -1,0 +1,12 @@
+# Publica el status del bot en el gist secreto (one-shot; lo dispara el .timer).
+# Ajusta WorkingDirectory y el intérprete de Python a tu instalación.
+[Unit]
+Description=tradebot: publica el status al gist secreto
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/tradebot
+ExecStart=/usr/bin/python3 scripts/publish_status.py
+# Si usas venv:  ExecStart=/opt/tradebot/.venv/bin/python scripts/publish_status.py

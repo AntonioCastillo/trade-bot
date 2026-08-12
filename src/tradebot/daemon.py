@@ -25,6 +25,7 @@ from .factory import build_engine
 from .notifier import Notifier
 from .reporting import render_report
 from .selfcheck import run_api_check
+from .status import write_status
 from .sniper import Sniper
 from .storage import Storage
 
@@ -287,6 +288,10 @@ def run_forever(
                         engine.storage, config.risk.quote_currency, report_path,
                         config.risk.starting_balance,
                     )
+                    try:
+                        write_status(engine, config)   # data/status.json (para publicar)
+                    except Exception:
+                        logger.warning("No pude escribir data/status.json")
                     s = engine.storage.summary()
                     logger.info(
                         "Informe actualizado (%s) | ops=%d | P&L=%.2f %s | equity=%.2f | %s",

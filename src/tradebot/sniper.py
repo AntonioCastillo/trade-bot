@@ -231,6 +231,20 @@ class Sniper:
                     "| P&L=%+.2f (%+.1f%%) | mejor=%s",
                     s["open"], s["invested"], s["value"], s["pnl"], pct, best)
 
+    def write_status_file(self, path: str = "data/sniper_status.json") -> None:
+        """Vuelca el mark-to-market de los billetes a JSON (para publicar el status)."""
+        s = self.summary()
+        data = {
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "open": s["open"], "invested": round(s["invested"], 2),
+            "value": round(s["value"], 2), "pnl": round(s["pnl"], 2),
+            "best": ({"symbol": s["best"][0], "mult": round(s["best"][1], 2)}
+                     if s["best"] else None),
+        }
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
     # --- Bucle --------------------------------------------------------------------
 
     def run_forever(self) -> None:
@@ -258,6 +272,10 @@ class Sniper:
                     # Resumen periódico (~cada 30 min) para observar la lotería.
                     if self.snipes and time.time() - last_summary >= 1800:
                         self._log_summary()
+                        try:
+                            self.write_status_file()   # data/sniper_status.json
+                        except Exception:
+                            logger.warning("[SNIPER] no pude escribir sniper_status.json")
                         last_summary = time.time()
                 except Exception:
                     logger.exception("[SNIPER] error en el ciclo; continúo")

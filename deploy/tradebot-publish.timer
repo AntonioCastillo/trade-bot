@@ -1,0 +1,11 @@
+# Dispara la publicación del status cada 15 min (y ~3 min tras arrancar).
+[Unit]
+Description=Publica el status del bot cada 15 min
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
