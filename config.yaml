@@ -50,36 +50,23 @@ universe:
       trailing_stop_pct: 0.10
       position_size_pct: 0.20
 
-  # 🔴 SIN EDGE — REACTIVADA SOLO PARA OBSERVAR LA SANGRÍA POR COMISIONES.
-  # Scalp EMA5>EMA20 @5m con TP/SL de ±0.5%: el coste round-trip (~0.25%) es la
-  # MITAD del objetivo -> hace falta ~75% de aciertos solo para no perder (imposible
-  # a 5m). Puesta a propósito para ver el PF<1 en el informe. NO es una apuesta de
-  # edge; quítala cuando ya hayas visto la sangría.
-  - name: scalping5m
-    symbols: [XRP/USDT, DOGE/USDT]
-    strategy: scalping
-    timeframe: 5m
-    params:
-      ema_fast: 5
-      ema_slow: 20
-      min_gap_pct: 0.0
-    risk:
-      stop_loss_pct: 0.005        # ±0.5%: objetivo de scalp (coste ~0.25% = mitad)
-      take_profit_pct: 0.005
-      position_size_pct: 0.05
-
   # Eliminadas tras verlas sangrar en vivo (confirmando la validación):
   #   - grid_obs   (LTC @1h):       acumulaba bolsa underwater (la trampa del -72%).
-  #   - volumen5m  (SHIB/PEPE @5m): -6.80 USDT en vivo, 0% aciertos; sin edge, el
-  #                                 ruido+comisiones de memecoins en 5m la sangran.
-  # Activas: momentum1d + breakout1d (edge, 0.20/pos) + scalping5m (OBSERVACIÓN) +
-  # sniper. (trend1d y reversion4h aparcadas — ver cabecera; carry APAGADO).
+  #   - volumen5m  (SHIB/PEPE @5m): -6.80 USDT en vivo, 0% aciertos; sin edge.
+  #   - scalping5m (XRP/DOGE @5m):  DESACTIVADA (2026-08-13). Medida inviable por 4
+  #       vías: (1) matemática (coste 0.3% real vs objetivo 0.5% -> break-even 80%),
+  #       (2) filtros (trend/vol/RSI/ATR: ningún filtro pasa de ~50% win, y en BRUTO
+  #       la señal ya pierde), (3) comisión real 0.1%/lado confirmada en fills (K4 no
+  #       la baja), (4) live -0.22 USDT, 33% aciertos. El cruce EMA5/20 a 5m no tiene
+  #       edge; filtrarlo no lo crea. Solo sería viable con rebates de market maker.
+  # Activas: momentum1d + breakout1d (edge @1d) + sniper.
+  # (trend1d y reversion4h aparcadas — ver cabecera; carry APAGADO).
 
 risk:
   quote_currency: USDT
   starting_balance: 1000        # saldo simulado (paper) para OBSERVAR con números legibles
   position_size_pct: 0.08       # por defecto (cada cabeza puede sobrescribir)
-  max_open_positions: 8         # 3 cabezas × 2 símbolos + margen (sniper va aparte)
+  max_open_positions: 6         # 2 cabezas × 2 símbolos + margen (sniper va aparte)
   stop_loss_pct: 0.05           # defaults; cada categoría puede sobrescribir
   take_profit_pct: 0.03
   max_daily_loss_pct: 0.20      # corte diario (paper, con muchas cabezas)
