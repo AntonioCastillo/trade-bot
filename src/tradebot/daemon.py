@@ -64,6 +64,8 @@ def _heads_summary(config: Config) -> str:
     for ins in config.instruments:
         groups.setdefault(ins.category, []).append(ins.symbol.split("/")[0])
     lines = [f"• {cat}: {', '.join(syms)}" for cat, syms in groups.items()]
+    if config.xsmom.enabled:
+        lines.append(f"• xsmom (momentum transversal, top-{config.xsmom.top_k})")
     if config.sniper.enabled:
         lines.append("• sniper (recién listadas)")
     if config.carry.enabled:
@@ -167,6 +169,18 @@ def _maybe_start_publisher(config: Config, engine: Engine) -> threading.Thread |
     return thread
 
 
+def _maybe_start_xsmom(config: Config, notifier: Notifier) -> threading.Thread | None:
+    """Si está activado, arranca el momentum transversal en un hilo (PAPER)."""
+    if not config.xsmom.enabled:
+        return None
+    from .xsmom import XSMomRunner
+    runner = XSMomRunner(config, Exchange(config), notifier)
+    thread = threading.Thread(target=runner.run_forever, name="xsmom", daemon=True)
+    thread.start()
+    logger.info("XS-Momentum lanzado en segundo plano (mismo proceso) | PAPER")
+    return thread
+
+
 def _maybe_first_run_api_check(engine: Engine, config: Config) -> None:
     """En el PRIMER arranque en modo live, hace una verificación real de ~1 USD
     (compra+venta). Deja una marca en disco para no repetirla nunca más."""
@@ -250,8 +264,7 @@ def run_forever(
 
     symbols = _validate_symbols(engine, config.symbols())
     if not symbols:
-        logger.error("Ningún símbolo del universo es válido en el exchange. Abortando.")
-        return
+        logger.warning("Universo de engine vacío; corro solo los subsistemas (xsmom/sniper/carry).")
     if config.mode == "live":
         _live_preflight(engine, config, symbols)
 
@@ -311,6 +324,7 @@ def run_forever(
     _maybe_first_run_api_check(engine, config)
     _maybe_start_sniper(config, engine.notifier)
     _maybe_start_carry(config, engine.notifier)
+    _maybe_start_xsmom(config, engine.notifier)
     # Deja un status.json inicial (hilo principal) para que el publicador ya tenga
     # qué subir en su primera vuelta, sin esperar al primer informe.
     try:

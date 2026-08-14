@@ -12,6 +12,7 @@ from typing import Any
 
 DEFAULT_STATUS_PATH = "data/status.json"
 DEFAULT_SNIPER_PATH = "data/sniper_status.json"
+DEFAULT_XSMOM_PATH = "data/xsmom_status.json"
 
 
 def active_heads(config) -> list[dict]:
@@ -71,19 +72,31 @@ def write_status(engine, config, path: str = DEFAULT_STATUS_PATH) -> None:
                  encoding="utf-8")
 
 
-def merge_sniper(status: dict, sniper_path: str = DEFAULT_SNIPER_PATH) -> dict:
-    """Añade al status el resumen del sniper (que su hilo deja en JSON), si existe."""
-    sp = Path(sniper_path)
-    if sp.exists():
+def _merge_file(status: dict, key: str, path: str) -> dict:
+    """Fusiona en `status[key]` el JSON de un subsistema (sniper/xsmom), si existe."""
+    p = Path(path)
+    if p.exists():
         try:
-            status["sniper"] = json.loads(sp.read_text(encoding="utf-8"))
+            status[key] = json.loads(p.read_text(encoding="utf-8"))
         except Exception:
             pass
     return status
 
 
+def merge_sniper(status: dict, sniper_path: str = DEFAULT_SNIPER_PATH) -> dict:
+    """Añade al status el resumen del sniper (que su hilo deja en JSON), si existe."""
+    return _merge_file(status, "sniper", sniper_path)
+
+
+def merge_xsmom(status: dict, xsmom_path: str = DEFAULT_XSMOM_PATH) -> dict:
+    """Añade al status el resumen del momentum transversal, si existe."""
+    return _merge_file(status, "xsmom", xsmom_path)
+
+
 def load_merged(status_path: str = DEFAULT_STATUS_PATH,
-                sniper_path: str = DEFAULT_SNIPER_PATH) -> dict:
-    """Carga el status.json de disco y le fusiona el sniper. Para el script suelto."""
+                sniper_path: str = DEFAULT_SNIPER_PATH,
+                xsmom_path: str = DEFAULT_XSMOM_PATH) -> dict:
+    """Carga el status.json de disco y le fusiona los subsistemas. Para publicar."""
     data = json.loads(Path(status_path).read_text(encoding="utf-8"))
-    return merge_sniper(data, sniper_path)
+    merge_sniper(data, sniper_path)
+    return merge_xsmom(data, xsmom_path)

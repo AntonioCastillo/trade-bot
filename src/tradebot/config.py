@@ -65,6 +65,25 @@ class CarryConfig:
 
 
 @dataclass
+class XSMomConfig:
+    """Momentum transversal: rankea una cesta de majors, mantiene el top-K
+    (solo-largos, equal-weight), rebalanceo semanal, a CASH si BTC<SMA200.
+    Validado walk-forward: bate al equal-weight OOS; overlay de tendencia doma el
+    drawdown. Subsistema aparte (paper), como el carry/sniper."""
+
+    enabled: bool = False
+    universe: list[str] = field(default_factory=list)
+    lookback_days: int = 30           # ventana de momentum
+    top_k: int = 3                    # nº de activos que se mantienen
+    rebalance_days: int = 7           # cada cuánto rebalancea (semanal)
+    trend_filter: bool = True         # a cash cuando el líder está bajo su SMA
+    trend_symbol: str = "BTC/USDT"
+    trend_sma: int = 200
+    fee_pct: float = 0.001            # comisión real por lado (0.1%)
+    poll_interval_seconds: int = 3600  # cada cuánto comprueba si toca rebalancear
+
+
+@dataclass
 class Instrument:
     """Un símbolo concreto ya resuelto con su estrategia y su riesgo efectivo."""
 
@@ -110,6 +129,7 @@ class Config:
     engine: EngineConfig = field(default_factory=EngineConfig)
     sniper: SniperConfig = field(default_factory=SniperConfig)
     carry: CarryConfig = field(default_factory=CarryConfig)
+    xsmom: XSMomConfig = field(default_factory=XSMomConfig)
     db_path: str = "data/tradebot.db"
     log_level: str = "INFO"
     credentials: Credentials = field(default_factory=Credentials)
@@ -122,8 +142,10 @@ class Config:
                 "mode=live requiere KUCOIN_API_KEY, KUCOIN_API_SECRET y "
                 "KUCOIN_API_PASSPHRASE en el .env"
             )
-        if not self.instruments:
-            raise ValueError("El universo está vacío: define al menos un símbolo")
+        if not self.instruments and not (
+            self.sniper.enabled or self.carry.enabled or self.xsmom.enabled
+        ):
+            raise ValueError("Nada que ejecutar: sin instrumentos ni subsistemas activos")
         for ins in self.instruments:
             if not 0 < ins.position_size_pct <= 1:
                 raise ValueError(
@@ -202,6 +224,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     engine = EngineConfig(**(raw.get("engine") or {}))
     sniper = SniperConfig(**(raw.get("sniper") or {}))
     carry = CarryConfig(**(raw.get("carry") or {}))
+    xsmom = XSMomConfig(**(raw.get("xsmom") or {}))
     global_timeframe = raw.get("timeframe", "1h")
     instruments = _build_instruments(raw.get("universe") or [], risk, global_timeframe)
 
@@ -223,6 +246,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         engine=engine,
         sniper=sniper,
         carry=carry,
+        xsmom=xsmom,
         db_path=(raw.get("storage") or {}).get("db_path", "data/tradebot.db"),
         log_level=(raw.get("logging") or {}).get("level", "INFO"),
         credentials=credentials,
