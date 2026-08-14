@@ -24,6 +24,7 @@ except Exception:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from dotenv import load_dotenv  # noqa: E402
 from tradebot.config import load_config  # noqa: E402
 from tradebot.daemon import run_forever  # noqa: E402
 from tradebot.notifier import PrefixNotifier, build_notifier  # noqa: E402
@@ -32,6 +33,7 @@ CONFIRM = "SI OPERAR EN REAL"
 
 
 def main() -> None:
+    load_dotenv()
     config_path = "config.yaml"
     
     # Leer el modo desde la variable de entorno MODO o TRADEBOT_MODO (para entornos sin consola/VPS)
