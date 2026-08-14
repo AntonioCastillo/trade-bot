@@ -73,6 +73,36 @@ class RiskManager:
             self._halted = False
             self._halted_reason = ""
 
+    def anchor_on_start(self, equity: float) -> None:
+        """Al arrancar el servicio, evita que un `ath_equity` persistido de un
+        régimen de capital ANTERIOR (tras bajar el starting_balance, retirar
+        fondos o resetear el paper) dispare el disyuntor global sin que se haya
+        operado nada.
+
+        Si el drawdown 'importado' ya supera el límite estando en reposo, el pico
+        no pertenece a este capital: re-ancla el máximo al equity actual y limpia
+        el halt. Un drawdown dentro de tolerancia se conserva (anti-gaming: no se
+        puede esquivar un bleed real reiniciando)."""
+        if equity <= 0:
+            return
+        max_global = getattr(self.config, "max_account_drawdown_pct", 0.15)
+        if self.ath_equity > 0 and max_global > 0:
+            imported_dd = (self.ath_equity - equity) / self.ath_equity
+            if imported_dd >= max_global:
+                logger.warning(
+                    "ATH persistido (%.2f) implica un drawdown del %.1f%% ya al "
+                    "arrancar (equity %.2f); re-anclo el máximo al equity actual "
+                    "para no disparar el disyuntor sin operar.",
+                    self.ath_equity, imported_dd * 100, equity,
+                )
+                self.ath_equity = equity
+                self.global_drawdown = 0.0
+                if self._halted_reason == "drawdown_cuenta":
+                    self._halted = False
+                    self._halted_reason = ""
+                return
+        self.ath_equity = max(self.ath_equity, equity)
+
     @property
     def halted(self) -> bool:
         return self._halted

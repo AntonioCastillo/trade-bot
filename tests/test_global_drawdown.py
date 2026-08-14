@@ -26,6 +26,48 @@ def test_global_drawdown_halts_and_closes():
     assert risk.halted_reason == "drawdown_cuenta"
 
 
+def test_anchor_on_start_reanchors_stale_peak():
+    # ATH persistido de un capital anterior (600) muy por encima del equity de
+    # arranque (483.90): en reposo ya implicaría un 19.4% de drawdown -> re-ancla.
+    risk_cfg = RiskConfig(max_account_drawdown_pct=0.15)
+    risk = RiskManager(risk_cfg)
+    risk.set_ath_equity(600.0)
+
+    risk.anchor_on_start(483.90)
+
+    assert risk.ath_equity == 483.90
+    assert not risk.halted
+    # Tras re-anclar, el primer register_equity al mismo equity no debe halt.
+    risk.register_equity(483.90)
+    assert not risk.halted
+
+
+def test_anchor_on_start_clears_stale_halt():
+    risk_cfg = RiskConfig(max_account_drawdown_pct=0.15)
+    risk = RiskManager(risk_cfg)
+    risk.set_ath_equity(600.0)
+    risk.register_equity(483.90)          # dispara el disyuntor con el pico viejo
+    assert risk.halted and risk.halted_reason == "drawdown_cuenta"
+
+    risk.anchor_on_start(483.90)          # arranque del servicio
+    assert not risk.halted
+    assert risk.halted_reason == ""
+
+
+def test_anchor_on_start_keeps_peak_within_tolerance():
+    # Drawdown importado del 5% (< 15%): pico legítimo, se conserva (anti-gaming).
+    risk_cfg = RiskConfig(max_account_drawdown_pct=0.15)
+    risk = RiskManager(risk_cfg)
+    risk.set_ath_equity(1000.0)
+
+    risk.anchor_on_start(950.0)
+
+    assert risk.ath_equity == 1000.0
+    # Un bleed adicional que cruce el límite sí debe seguir disparando.
+    risk.register_equity(840.0)           # 16% desde 1000 -> halt
+    assert risk.halted and risk.halted_reason == "drawdown_cuenta"
+
+
 def test_engine_executes_emergency_close():
     # 2. Configurar mock de engine y base de datos
     risk_cfg = RiskConfig(

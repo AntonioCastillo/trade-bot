@@ -336,7 +336,13 @@ def run_forever(
     # Fija el cortafuegos de pérdida diaria contra el equity REAL de arranque
     # (en live es el balance de la cuenta, no el starting_balance del config).
     try:
-        engine.risk.reset_day(engine.equity())
+        eq0 = engine.equity()
+        # Antes de nada: si el ATH persistido pertenece a un capital anterior y ya
+        # implicaría un drawdown por encima del límite en reposo, re-anclarlo evita
+        # que el disyuntor global salte en el primer ciclo sin haber operado.
+        engine.risk.anchor_on_start(eq0)
+        engine.storage.set_state("ath_equity", engine.risk.ath_equity)
+        engine.risk.reset_day(eq0)
     except Exception:
         logger.warning("No pude fijar el equity inicial para el cortafuegos diario")
 
