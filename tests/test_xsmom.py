@@ -149,16 +149,11 @@ def test_live_dry_run_sends_nothing():
     assert ex.buys == [] and ex.sells == []
 
 
-def test_runner_selects_paper_vs_live(monkeypatch):
-    monkeypatch.delenv(XSMOM_LIVE_CONFIRM_ENV, raising=False)
+def test_runner_selects_paper_vs_live():
     cfg = make_config(make_instrument(), starting_balance=100)
     cfg.xsmom.universe = UNIV3
     assert isinstance(XSMomRunner(cfg, object(), NullNotifier()).pf, XSMomPortfolio)  # paper
 
     cfg.mode = "live"
     r = XSMomRunner(cfg, object(), NullNotifier())
-    assert isinstance(r.pf, LiveXSMomExecutor) and r.pf.dry_run is True   # sin confirmación
-
-    monkeypatch.setenv(XSMOM_LIVE_CONFIRM_ENV, XSMOM_LIVE_CONFIRM)
-    r2 = XSMomRunner(cfg, object(), NullNotifier())
-    assert isinstance(r2.pf, LiveXSMomExecutor) and r2.pf.dry_run is False  # confirmado
+    assert isinstance(r.pf, LiveXSMomExecutor) and r.pf.dry_run is False   # REAL directa si es live

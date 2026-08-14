@@ -320,28 +320,22 @@ class XSMomRunner:
         self._last_rebalance: datetime | None = None
 
     def _build_pf(self):
-        """El MODO manda: paper -> cartera simulada; live -> ejecutor REAL de spot/futuros
-        (con dry-run de estreno hasta la confirmación por env)."""
+        """El MODO manda: paper -> cartera simulada; live -> ejecutor REAL de spot/futuros."""
         if self.config.mode != "live":
             return XSMomPortfolio(self.config.risk.starting_balance, self.cfg.fee_pct)
-        confirmed = os.environ.get(XSMOM_LIVE_CONFIRM_ENV, "").strip() == XSMOM_LIVE_CONFIRM
         
         if self.config.exchange == "kucoinfutures":
-            logger.warning("[XSMOM] ejecutor REAL de FUTUROS | %s",
-                           "REAL" if confirmed else "DRY-RUN (no envía órdenes)")
+            logger.warning("[XSMOM] ejecutor REAL de FUTUROS activo.")
             self.notifier.notify(
-                f"⚙️ <b>XS-Momentum FUTUROS</b> en {'🔴 REAL' if confirmed else '🧪 DRY-RUN'} "
-                f"(cesta {len(self.universe)}, top-{self.cfg.top_k}, leverage {self.cfg.leverage}x)")
-            return LiveXSMomFuturesExecutor(self.config, self.exchange, self.universe,
-                                            dry_run=not confirmed)
+                f"⚙️ <b>XS-Momentum FUTUROS</b> en 🔴 REAL (cesta {len(self.universe)}, top-{self.cfg.top_k}, leverage {self.cfg.leverage}x)"
+            )
+            return LiveXSMomFuturesExecutor(self.config, self.exchange, self.universe, dry_run=False)
         else:
-            logger.warning("[XSMOM] ejecutor REAL de spot | %s",
-                           "REAL" if confirmed else "DRY-RUN (no envía órdenes)")
+            logger.warning("[XSMOM] ejecutor REAL de SPOT activo.")
             self.notifier.notify(
-                f"⚙️ <b>XS-Momentum SPOT</b> en {'🔴 REAL' if confirmed else '🧪 DRY-RUN'} "
-                f"(cesta {len(self.universe)}, top-{self.cfg.top_k})")
-            return LiveXSMomExecutor(self.config, self.exchange, self.universe,
-                                     dry_run=not confirmed)
+                f"⚙️ <b>XS-Momentum SPOT</b> en 🔴 REAL (cesta {len(self.universe)}, top-{self.cfg.top_k})"
+            )
+            return LiveXSMomExecutor(self.config, self.exchange, self.universe, dry_run=False)
 
     def _need_bars(self) -> int:
         return max(self.cfg.lookback_days, self.cfg.trend_sma) + 5
