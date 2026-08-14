@@ -193,6 +193,120 @@ class LiveXSMomExecutor:
         return traded * self.fee_pct   # comisión estimada (consistente con el paper)
 
 
+class LiveXSMomFuturesExecutor:
+    """Rebalanceo REAL de FUTUROS para XSMom.
+    Sincroniza las posiciones de futuros para mantener únicamente largos en los targets.
+    """
+
+    MIN_TRADE_USDT = 5.0   # ignora deltas menores en futuros
+
+    def __init__(self, config: Config, exchange: Exchange, universe: list[str], dry_run: bool = True):
+        self.config = config
+        self.exchange = exchange
+        self.universe = universe
+        self.dry_run = dry_run
+        self.quote = config.risk.quote_currency
+        self.fee_pct = config.xsmom.fee_pct
+        self.leverage = getattr(config.xsmom, "leverage", 1.0)
+
+    def _positions(self) -> dict[str, float]:
+        try:
+            raw = self.exchange._client.fetch_positions()
+            positions = {}
+            for pos in raw:
+                size = float(pos.get("contracts", 0.0) or 0.0)
+                if size > 0:
+                    symbol = pos.get("symbol")
+                    symbol_local = symbol.split(":")[0]
+                    side = pos.get("side", "long")
+                    if side == "short":
+                        size = -size
+                    positions[symbol_local] = size
+            return positions
+        except Exception:
+            logger.exception("[XSMOM-FUTURES] no pude leer posiciones reales de futuros")
+            return {}
+
+    def equity(self, prices: dict[str, float]) -> float:
+        try:
+            balance = self.exchange._client.fetch_balance()
+            return float(balance.get("total", {}).get(self.quote, 0.0))
+        except Exception:
+            logger.exception("[XSMOM-FUTURES] no pude leer balance de futuros para equity")
+            return 0.0
+
+    def holdings_value(self, prices: dict[str, float]) -> dict[str, float]:
+        positions = self._positions()
+        out = {}
+        for sym, size in positions.items():
+            price = prices.get(sym)
+            if price and abs(size) > 0:
+                out[sym] = round(size * price, 2)
+        return out
+
+    def rebalance(self, targets: list[str], prices: dict[str, float]) -> float:
+        total_equity = self.equity(prices)
+        if total_equity <= 0:
+            logger.warning("[XSMOM-FUTURES] equity <= 0, aborto rebalanceo")
+            return 0.0
+
+        per_target = (total_equity * self.leverage) / len(targets) if targets else 0.0
+        tag = "DRY-RUN" if self.dry_run else "REAL"
+        traded = 0.0
+
+        current_positions = self._positions()
+        
+        # 1) VENTAS / CIERRES: Cierra posiciones que ya no están en targets
+        for sym in self.universe:
+            if sym not in targets and current_positions.get(sym, 0.0) > 0:
+                amount_contracts = current_positions[sym]
+                traded += amount_contracts * prices[sym]
+                logger.info("[XSMOM-FUTURES][%s] CIERRA POSICION %s (~%.2f contratos)", tag, sym, amount_contracts)
+                if not self.dry_run:
+                    try:
+                        self.exchange.create_futures_order(sym, "sell", amount_contracts, leverage=self.leverage)
+                    except Exception as e:
+                        logger.warning("[XSMOM-FUTURES] fallo al cerrar posición en %s: %s", sym, e)
+
+        # 2) COMPRAS / AJUSTES: Abre/ajusta posiciones de los targets
+        for sym in targets:
+            price = prices.get(sym, 0.0)
+            if price <= 0:
+                continue
+
+            current_size = current_positions.get(sym, 0.0)
+            target_size = per_target / price
+            
+            contract_size = self.exchange.contract_size(sym)
+            target_contracts = round(target_size / contract_size)
+            current_contracts = round(current_size / contract_size)
+            
+            diff_contracts = target_contracts - current_contracts
+            
+            if abs(diff_contracts) * contract_size * price > self.MIN_TRADE_USDT:
+                trade_value = diff_contracts * contract_size * price
+                traded += abs(trade_value)
+                
+                if diff_contracts > 0:
+                    logger.info("[XSMOM-FUTURES][%s] COMPRA LARGOS en %s: +%.1f contratos (~%.2f %s)", 
+                                tag, sym, diff_contracts, diff_contracts * contract_size * price, self.quote)
+                    if not self.dry_run:
+                        try:
+                            self.exchange.create_futures_order(sym, "buy", diff_contracts, leverage=self.leverage)
+                        except Exception as e:
+                            logger.warning("[XSMOM-FUTURES] fallo al aumentar posición en %s: %s", sym, e)
+                elif diff_contracts < 0:
+                    logger.info("[XSMOM-FUTURES][%s] REDUCE LARGOS en %s: %.1f contratos (~%.2f %s)", 
+                                tag, sym, diff_contracts, abs(diff_contracts) * contract_size * price, self.quote)
+                    if not self.dry_run:
+                        try:
+                            self.exchange.create_futures_order(sym, "sell", abs(diff_contracts), leverage=self.leverage)
+                        except Exception as e:
+                            logger.warning("[XSMOM-FUTURES] fallo al reducir posición en %s: %s", sym, e)
+
+        return traded * self.fee_pct
+
+
 # --- Runner (hilo del daemon) -------------------------------------------------
 
 class XSMomRunner:
@@ -206,21 +320,28 @@ class XSMomRunner:
         self._last_rebalance: datetime | None = None
 
     def _build_pf(self):
-        """El MODO manda: paper -> cartera simulada; live -> ejecutor REAL de spot
+        """El MODO manda: paper -> cartera simulada; live -> ejecutor REAL de spot/futuros
         (con dry-run de estreno hasta la confirmación por env)."""
         if self.config.mode != "live":
             return XSMomPortfolio(self.config.risk.starting_balance, self.cfg.fee_pct)
         confirmed = os.environ.get(XSMOM_LIVE_CONFIRM_ENV, "").strip() == XSMOM_LIVE_CONFIRM
-        logger.warning("[XSMOM] ejecutor REAL de spot | %s",
-                       "REAL" if confirmed else "DRY-RUN (no envía órdenes)")
-        if not confirmed:
-            logger.warning("[XSMOM] 1ª vez en DRY-RUN. Para rebalancear de verdad exporta "
-                           "%s=\"%s\"", XSMOM_LIVE_CONFIRM_ENV, XSMOM_LIVE_CONFIRM)
-        self.notifier.notify(
-            f"⚙️ <b>XS-Momentum</b> en {'🔴 REAL' if confirmed else '🧪 DRY-RUN'} "
-            f"(cesta {len(self.universe)}, top-{self.cfg.top_k})")
-        return LiveXSMomExecutor(self.config, self.exchange, self.universe,
-                                 dry_run=not confirmed)
+        
+        if self.config.exchange == "kucoinfutures":
+            logger.warning("[XSMOM] ejecutor REAL de FUTUROS | %s",
+                           "REAL" if confirmed else "DRY-RUN (no envía órdenes)")
+            self.notifier.notify(
+                f"⚙️ <b>XS-Momentum FUTUROS</b> en {'🔴 REAL' if confirmed else '🧪 DRY-RUN'} "
+                f"(cesta {len(self.universe)}, top-{self.cfg.top_k}, leverage {self.cfg.leverage}x)")
+            return LiveXSMomFuturesExecutor(self.config, self.exchange, self.universe,
+                                            dry_run=not confirmed)
+        else:
+            logger.warning("[XSMOM] ejecutor REAL de spot | %s",
+                           "REAL" if confirmed else "DRY-RUN (no envía órdenes)")
+            self.notifier.notify(
+                f"⚙️ <b>XS-Momentum SPOT</b> en {'🔴 REAL' if confirmed else '🧪 DRY-RUN'} "
+                f"(cesta {len(self.universe)}, top-{self.cfg.top_k})")
+            return LiveXSMomExecutor(self.config, self.exchange, self.universe,
+                                     dry_run=not confirmed)
 
     def _need_bars(self) -> int:
         return max(self.cfg.lookback_days, self.cfg.trend_sma) + 5

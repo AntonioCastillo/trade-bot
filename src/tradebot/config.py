@@ -81,6 +81,7 @@ class XSMomConfig:
     trend_symbol: str = "BTC/USDT"
     trend_sma: int = 200
     fee_pct: float = 0.001            # comisión real por lado (0.1%)
+    leverage: float = 1.0             # apalancamiento en futuros
     poll_interval_seconds: int = 3600  # cada cuánto comprueba si toca rebalancear
 
 

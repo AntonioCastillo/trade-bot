@@ -1,122 +1,16 @@
 # Configuración del bot para Futuros Perpetuos con Cobertura y Cortos.
 
-mode: paper           # paper | live
+mode: live           # paper | live
 exchange: kucoinfutures
 
 timeframe: 4h
 lookback: 300
 
-# Cobertura dinámica de Beta
+# Cobertura dinámica de Beta (no aplica a XSMom)
 hedging:
-  enabled: true
-  symbol: BTC/USDT
-  ratio: 0.5            # corto del 50% de la exposición neta de altcoins
-  min_positions: 2      # activar al tener al menos 2 posiciones abiertas
+  enabled: false
 
-universe:
-  # 🟢 Momentum diario bidireccional (largos y cortos)
-  - name: momentum_diario
-    symbols: [BNB/USDT, ADA/USDT]
-    strategy: momentum
-    timeframe: 1d
-    params:
-      fast_ema: 10
-      slow_ema: 30
-      breakout_lookback: 20
-      breakout_atr_mult: 0.5
-      volume_mult: 1.0
-      bidirectional: true
-      min_bb_width: 0.02
-    risk:
-      stop_loss_pct: 0.08
-      take_profit_pct: 0.30
-      trailing_stop_pct: 0.10
-      position_size_pct: 0.15
-
-  # 🟢 Breakout diario bidireccional (largos y cortos)
-  - name: breakout_diario
-    symbols: [SOL/USDT, AVAX/USDT]
-    strategy: breakout
-    timeframe: 1d
-    params:
-      lookback: 20
-      bidirectional: true
-      min_bb_width: 0.02
-    risk:
-      stop_loss_pct: 0.08
-      take_profit_pct: 0.30
-      trailing_stop_pct: 0.10
-      position_size_pct: 0.15
-
-  # 🟢 Reversión a la media en rango lateral (largos y cortos)
-  - name: reversion_rango
-    symbols: [LINK/USDT, LTC/USDT]
-    strategy: range_reversion
-    timeframe: 4h
-    params:
-      adx_period: 14
-      adx_max: 25.0
-      rsi_period: 14
-      rsi_oversold: 30.0
-      rsi_overbought: 70.0
-      bb_period: 20
-      bb_std: 2.0
-      bidirectional: true
-    risk:
-      stop_loss_pct: 0.05
-      take_profit_pct: 0.10
-      trailing_stop_pct: 0.03
-      position_size_pct: 0.15
-
-  # 🟢 Capitulación de mercado / Reversión por liquidaciones
-  - name: capitulacion
-    symbols: [XRP/USDT, DOGE/USDT]
-    strategy: capitulation
-    timeframe: 4h
-    params:
-      rsi_period: 14
-      rsi_oversold: 20.0
-      lookback: 20
-      drop_pct: 0.05
-      volume_mult: 2.0
-    risk:
-      stop_loss_pct: 0.05
-      take_profit_pct: 0.15
-      trailing_stop_pct: 0.03
-      position_size_pct: 0.15
-
-  # 🟢 Scalping rápido intradía por sobreextensiones de RSI (largos y cortos)
-  - name: scalping_rapido
-    symbols: [ETH/USDT]
-    strategy: rsi_scalper
-    timeframe: 15m
-    params:
-      rsi_period: 7
-      rsi_oversold: 15.0
-      rsi_overbought: 85.0
-      bidirectional: true
-    risk:
-      stop_loss_pct: 0.015
-      take_profit_pct: 0.025
-      trailing_stop_pct: 0.008
-      position_size_pct: 0.10
-
-  # 🟢 Estrategia de Rejilla (Grid Trading) optimizada para rangos laterales
-  - name: grid_lateral
-    symbols: [NEAR/USDT]
-    strategy: grid
-    timeframe: 4h
-    params:
-      range_period: 100
-      levels: 10
-      adx_period: 14
-      adx_max: 25.0
-      bidirectional: false
-    risk:
-      stop_loss_pct: 0.08
-      take_profit_pct: 0.02
-      position_size_pct: 0.06
-      max_concurrent_per_symbol: 5
+universe: []
 
 risk:
   quote_currency: USDT
@@ -143,7 +37,17 @@ carry:
   enabled: false
 
 xsmom:
-  enabled: false
+  enabled: true
+  universe: [BTC/USDT, ETH/USDT, BNB/USDT, ADA/USDT, SOL/USDT, AVAX/USDT, LINK/USDT, LTC/USDT, XRP/USDT, DOGE/USDT, NEAR/USDT]
+  lookback_days: 30
+  top_k: 3
+  rebalance_days: 7
+  trend_filter: true
+  trend_symbol: BTC/USDT
+  trend_sma: 200
+  fee_pct: 0.0004               # comisión promedio de futuros
+  leverage: 2.0                 # apalancamiento 2x para eficiencia de margen
+  poll_interval_seconds: 3600
 
 storage:
   db_path: data/tradebot_futures.db
