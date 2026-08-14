@@ -49,6 +49,7 @@ def build_status(engine, config) -> dict[str, Any]:
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mode": config.mode,
+        "exchange": config.exchange,
         "quote": config.risk.quote_currency,
         "equity": equity,
         "starting_balance": config.risk.starting_balance,

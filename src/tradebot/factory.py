@@ -46,7 +46,8 @@ def build_engine(config: Config | None = None, log_file: str | None = None) -> E
     risk.reset_day(config.risk.starting_balance)
     execution = build_execution_engine(config, exchange)
     storage = Storage(config.effective_db_path())   # BD separada por modo (paper/live)
-    tag = "🔴 [REAL]" if config.mode == "live" else "🧪 [SIMULACIÓN]"
+    market_str = "FUTUROS" if config.exchange == "kucoinfutures" else "SPOT"
+    tag = f"🔴 [REAL - {market_str}]" if config.mode == "live" else f"🧪 [SIMULACIÓN - {market_str}]"
     notifier = PrefixNotifier(
         build_notifier(config.credentials.telegram_token,
                        config.credentials.telegram_chat_id),
