@@ -27,28 +27,55 @@ class RiskManager:
         self.config = config
         self._day_start_equity: float | None = None
         self._halted = False
+        self._halted_reason = ""
+        self.ath_equity = config.starting_balance
+        self.global_drawdown = 0.0
 
-    # --- Control de pérdida diaria -------------------------------------------------
+    def set_ath_equity(self, value: float) -> None:
+        self.ath_equity = max(self.ath_equity, value)
+
+    # --- Control de pérdida diaria y global ---------------------------------------
 
     def register_equity(self, equity: float) -> None:
+        # 1. Pérdida diaria
         if self._day_start_equity is None:
             self._day_start_equity = equity
-            return
-        drawdown = (self._day_start_equity - equity) / self._day_start_equity
-        if drawdown >= self.config.max_daily_loss_pct and not self._halted:
+        else:
+            daily_dd = (self._day_start_equity - equity) / self._day_start_equity
+            if daily_dd >= self.config.max_daily_loss_pct and not self._halted:
+                self._halted = True
+                self._halted_reason = "drawdown_diario"
+                logger.error(
+                    "LIMITE DE PERDIDA DIARIA alcanzado (%.2f%%). Bot detenido.",
+                    daily_dd * 100,
+                )
+
+        # 2. Pérdida global de la cuenta (desde ATH)
+        self.ath_equity = max(self.ath_equity, equity)
+        self.global_drawdown = (self.ath_equity - equity) / self.ath_equity
+        max_global = getattr(self.config, "max_account_drawdown_pct", 0.15)
+        if max_global > 0 and self.global_drawdown >= max_global and not self._halted:
             self._halted = True
-            logger.error(
-                "LIMITE DE PERDIDA DIARIA alcanzado (%.2f%%). Bot detenido.",
-                drawdown * 100,
+            self._halted_reason = "drawdown_cuenta"
+            logger.critical(
+                "DISYUNTOR CRITICO: LIMITE DE PERDIDA GLOBAL DE CUENTA alcanzado (%.2f%%). Bot detenido.",
+                self.global_drawdown * 100,
             )
 
     def reset_day(self, equity: float) -> None:
         self._day_start_equity = equity
-        self._halted = False
+        # Solo reseteamos el halt si no fue causado por el disyuntor global de cuenta
+        if self._halted_reason != "drawdown_cuenta":
+            self._halted = False
+            self._halted_reason = ""
 
     @property
     def halted(self) -> bool:
         return self._halted
+
+    @property
+    def halted_reason(self) -> str:
+        return self._halted_reason
 
     # --- Entradas ------------------------------------------------------------------
 
@@ -60,7 +87,7 @@ class RiskManager:
         open_positions: list[Position],
     ) -> RiskDecision:
         if self._halted:
-            return RiskDecision(None, "bot detenido por límite de pérdida diaria")
+            return RiskDecision(None, f"bot detenido por gestión de riesgo ({self._halted_reason})")
         if signal.type is SignalType.HOLD:
             return RiskDecision(None, "señal HOLD")
         if len(open_positions) >= self.config.max_open_positions:

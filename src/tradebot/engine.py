@@ -65,6 +65,22 @@ class Engine:
 
         if self.enforce_daily_loss:
             self.risk.register_equity(self.equity())
+            
+            # Persistir nueva ATH en la base de datos
+            ath_db = self.storage.get_state("ath_equity", 0.0) or 0.0
+            if self.risk.ath_equity > ath_db:
+                self.storage.set_state("ath_equity", self.risk.ath_equity)
+                
+            # Disyuntor global de pérdida de cuenta
+            if self.risk.halted and self.risk.halted_reason == "drawdown_cuenta" and len(self.positions) > 0:
+                logger.critical("[DISYUNTOR] Drawdown global crítico de cuenta alcanzado. Cerrando todo.")
+                self.notifier.notify(
+                    "🚨 <b>DISYUNTOR CRÍTICO ACTIVADO</b> 🚨\n"
+                    f"El Drawdown global de la cuenta ha superado el límite permitido "
+                    f"({self.risk.global_drawdown * 100:.1f}% >= {getattr(self.config.risk, 'max_account_drawdown_pct', 0.15) * 100:.1f}%).\n"
+                    "Cerrando todas las posiciones abiertas y deteniendo bot de forma permanente."
+                )
+                self.emergency_close_all(reason="global_drawdown_halt")
 
         self._rebalance_hedging()
 
@@ -265,6 +281,21 @@ class Engine:
             f"Saldo cuenta: {equity:.2f} {quote}\n"
             f"Motivo: {signal.reason}"
         )
+
+    def emergency_close_all(self, reason: str = "emergency_close") -> None:
+        """Cierra inmediatamente todas las posiciones abiertas en el exchange."""
+        logger.critical("[ENGINE] Iniciando cierre de emergencia de todas las posiciones (%d posiciones)", len(self.positions))
+        still_open = []
+        for pos in list(self.positions):
+            current_price = self.last_prices.get(pos.symbol, pos.entry_price)
+            exit_side = Side.SELL if pos.side is Side.BUY else Side.BUY
+            close_order = Order(pos.symbol, exit_side, pos.amount, current_price, reason=reason)
+            
+            success = self._close_position(pos, close_order)
+            if not success:
+                logger.error("[ENGINE] No se pudo cerrar la posición %s en el cierre de emergencia", pos.symbol)
+                still_open.append(pos)
+        self.positions = still_open
 
     def _close_position(self, pos: Position, close_order) -> bool:
         try:

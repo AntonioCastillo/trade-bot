@@ -20,6 +20,7 @@ class RiskConfig:
     stop_loss_pct: float = 0.03
     take_profit_pct: float = 0.06
     max_daily_loss_pct: float = 0.10
+    max_account_drawdown_pct: float = 0.15
 
 
 @dataclass

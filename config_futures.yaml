@@ -101,14 +101,32 @@ universe:
       trailing_stop_pct: 0.008
       position_size_pct: 0.10
 
+  # 🟢 Estrategia de Rejilla (Grid Trading) optimizada para rangos laterales
+  - name: grid_lateral
+    symbols: [NEAR/USDT]
+    strategy: grid
+    timeframe: 4h
+    params:
+      range_period: 100
+      levels: 10
+      adx_period: 14
+      adx_max: 25.0
+      bidirectional: false
+    risk:
+      stop_loss_pct: 0.08
+      take_profit_pct: 0.02
+      position_size_pct: 0.06
+      max_concurrent_per_symbol: 5
+
 risk:
   quote_currency: USDT
   starting_balance: 1000
   position_size_pct: 0.08
-  max_open_positions: 6
+  max_open_positions: 10
   stop_loss_pct: 0.05
   take_profit_pct: 0.03
   max_daily_loss_pct: 0.20
+  max_account_drawdown_pct: 0.15
 
 engine:
   poll_interval_seconds: 60

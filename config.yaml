@@ -41,6 +41,7 @@ risk:
   stop_loss_pct: 0.05           # defaults; cada categoría puede sobrescribir
   take_profit_pct: 0.03
   max_daily_loss_pct: 0.20      # corte diario (paper, con muchas cabezas)
+  max_account_drawdown_pct: 0.15
 
 engine:
   poll_interval_seconds: 60     # cada cuánto revisa el mercado (modo live paper)
