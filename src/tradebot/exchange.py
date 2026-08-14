@@ -96,11 +96,17 @@ class Exchange:
         rows: list = []
         while since < now:
             batch = self._client.fetch_ohlcv(symbol, timeframe, since=since, limit=1500)
-            if not batch:
+            if not batch or len(batch) == 0:
                 break
+            
+            # Evitar bucle infinito
+            if len(rows) > 0 and batch[-1][0] <= rows[-1][0]:
+                since = rows[-1][0] + tf_ms
+                continue
+
             rows.extend(batch)
             since = batch[-1][0] + tf_ms
-            if len(batch) < 1500:
+            if len(rows) >= total:
                 break
 
         df = pd.DataFrame(rows, columns=OHLCV_COLUMNS).drop_duplicates(subset="timestamp")

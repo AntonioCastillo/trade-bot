@@ -85,6 +85,22 @@ universe:
       trailing_stop_pct: 0.03
       position_size_pct: 0.15
 
+  # 🟢 Scalping rápido intradía por sobreextensiones de RSI (largos y cortos)
+  - name: scalping_rapido
+    symbols: [ETH/USDT]
+    strategy: rsi_scalper
+    timeframe: 15m
+    params:
+      rsi_period: 7
+      rsi_oversold: 15.0
+      rsi_overbought: 85.0
+      bidirectional: true
+    risk:
+      stop_loss_pct: 0.015
+      take_profit_pct: 0.025
+      trailing_stop_pct: 0.008
+      position_size_pct: 0.10
+
 risk:
   quote_currency: USDT
   starting_balance: 1000
