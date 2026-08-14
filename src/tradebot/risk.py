@@ -77,31 +77,56 @@ class RiskManager:
         """Al arrancar el servicio, evita que un `ath_equity` persistido de un
         régimen de capital ANTERIOR (tras bajar el starting_balance, retirar
         fondos o resetear el paper) dispare el disyuntor global sin que se haya
-        operado nada.
+        operado nada — SIN desarmar el disyuntor ante una pérdida real.
 
-        Si el drawdown 'importado' ya supera el límite estando en reposo, el pico
-        no pertenece a este capital: re-ancla el máximo al equity actual y limpia
-        el halt. Un drawdown dentro de tolerancia se conserva (anti-gaming: no se
-        puede esquivar un bleed real reiniciando)."""
+        Reglas:
+          - Drawdown importado < límite: pico legítimo, se conserva (anti-gaming).
+          - Drawdown importado ≥ límite y equity EN/POR ENCIMA de la base de
+            capital (starting_balance): no se ha perdido principal, el pico es de
+            otro capital -> re-ancla al equity actual y limpia el halt.
+          - Drawdown importado ≥ límite pero equity POR DEBAJO de la base: es
+            pérdida real -> NO desarmar; ancla el máximo a la base para que el
+            disyuntor mida el drawdown real desde el capital de arranque."""
         if equity <= 0:
             return
         max_global = getattr(self.config, "max_account_drawdown_pct", 0.15)
-        if self.ath_equity > 0 and max_global > 0:
-            imported_dd = (self.ath_equity - equity) / self.ath_equity
-            if imported_dd >= max_global:
-                logger.warning(
-                    "ATH persistido (%.2f) implica un drawdown del %.1f%% ya al "
-                    "arrancar (equity %.2f); re-anclo el máximo al equity actual "
-                    "para no disparar el disyuntor sin operar.",
-                    self.ath_equity, imported_dd * 100, equity,
-                )
-                self.ath_equity = equity
-                self.global_drawdown = 0.0
-                if self._halted_reason == "drawdown_cuenta":
-                    self._halted = False
-                    self._halted_reason = ""
-                return
-        self.ath_equity = max(self.ath_equity, equity)
+        if self.ath_equity <= 0 or max_global <= 0:
+            self.ath_equity = max(self.ath_equity, equity)
+            return
+
+        imported_dd = (self.ath_equity - equity) / self.ath_equity
+        if imported_dd < max_global:
+            # Pico dentro de tolerancia: legítimo, se conserva.
+            self.ath_equity = max(self.ath_equity, equity)
+            return
+
+        # El pico guardado ya cortaría en reposo. Discriminador de capital real:
+        baseline = float(getattr(self.config, "starting_balance", 0.0) or 0.0)
+        if baseline > 0 and equity < baseline * (1 - 1e-6):
+            # Pérdida real por debajo del capital de arranque: NO desarmar. Ancla
+            # el máximo a la base para medir el drawdown real desde ahí (si ya lo
+            # cruza, saltará en el primer register_equity).
+            logger.warning(
+                "Equity de arranque (%.2f) por DEBAJO de la base de capital "
+                "(%.2f): es pérdida real, mantengo el disyuntor armado desde la "
+                "base (ignoro el pico persistido %.2f).",
+                equity, baseline, self.ath_equity,
+            )
+            self.ath_equity = baseline
+            self.global_drawdown = (baseline - equity) / baseline
+            return
+
+        logger.warning(
+            "ATH persistido (%.2f) implica un drawdown del %.1f%% ya al arrancar "
+            "(equity %.2f, base %.2f) y el equity NO está por debajo de la base: "
+            "pico de un capital anterior, re-anclo el máximo al equity actual.",
+            self.ath_equity, imported_dd * 100, equity, baseline,
+        )
+        self.ath_equity = equity
+        self.global_drawdown = 0.0
+        if self._halted_reason == "drawdown_cuenta":
+            self._halted = False
+            self._halted_reason = ""
 
     @property
     def halted(self) -> bool:

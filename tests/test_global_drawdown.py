@@ -27,9 +27,10 @@ def test_global_drawdown_halts_and_closes():
 
 
 def test_anchor_on_start_reanchors_stale_peak():
-    # ATH persistido de un capital anterior (600) muy por encima del equity de
-    # arranque (483.90): en reposo ya implicaría un 19.4% de drawdown -> re-ancla.
-    risk_cfg = RiskConfig(max_account_drawdown_pct=0.15)
+    # ATH persistido de un capital anterior (600) por encima del equity de
+    # arranque (483.90) que ES la base de capital: 19.4% de drawdown importado en
+    # reposo, pero no hay pérdida de principal -> re-ancla al equity actual.
+    risk_cfg = RiskConfig(starting_balance=483.90, max_account_drawdown_pct=0.15)
     risk = RiskManager(risk_cfg)
     risk.set_ath_equity(600.0)
 
@@ -43,20 +44,20 @@ def test_anchor_on_start_reanchors_stale_peak():
 
 
 def test_anchor_on_start_clears_stale_halt():
-    risk_cfg = RiskConfig(max_account_drawdown_pct=0.15)
+    risk_cfg = RiskConfig(starting_balance=483.90, max_account_drawdown_pct=0.15)
     risk = RiskManager(risk_cfg)
     risk.set_ath_equity(600.0)
     risk.register_equity(483.90)          # dispara el disyuntor con el pico viejo
     assert risk.halted and risk.halted_reason == "drawdown_cuenta"
 
-    risk.anchor_on_start(483.90)          # arranque del servicio
+    risk.anchor_on_start(483.90)          # arranque del servicio (equity == base)
     assert not risk.halted
     assert risk.halted_reason == ""
 
 
 def test_anchor_on_start_keeps_peak_within_tolerance():
     # Drawdown importado del 5% (< 15%): pico legítimo, se conserva (anti-gaming).
-    risk_cfg = RiskConfig(max_account_drawdown_pct=0.15)
+    risk_cfg = RiskConfig(starting_balance=1000.0, max_account_drawdown_pct=0.15)
     risk = RiskManager(risk_cfg)
     risk.set_ath_equity(1000.0)
 
@@ -66,6 +67,50 @@ def test_anchor_on_start_keeps_peak_within_tolerance():
     # Un bleed adicional que cruce el límite sí debe seguir disparando.
     risk.register_equity(840.0)           # 16% desde 1000 -> halt
     assert risk.halted and risk.halted_reason == "drawdown_cuenta"
+
+
+def test_anchor_on_start_real_loss_below_baseline_stays_armed():
+    # Discriminador: equity de arranque POR DEBAJO de la base (pérdida real de
+    # principal). Aunque el drawdown importado supere el límite, NO se desarma:
+    # el máximo se ancla a la base y el disyuntor salta con el drawdown real.
+    risk_cfg = RiskConfig(starting_balance=1000.0, max_account_drawdown_pct=0.15)
+    risk = RiskManager(risk_cfg)
+    risk.set_ath_equity(1000.0)
+
+    risk.anchor_on_start(800.0)           # 20% por debajo de la base: pérdida real
+
+    assert risk.ath_equity == 1000.0      # anclado a la base, NO re-anclado a 800
+    risk.register_equity(800.0)
+    assert risk.halted and risk.halted_reason == "drawdown_cuenta"
+
+
+def test_anchor_on_start_ignores_foreign_peak_but_arms_from_baseline():
+    # Pico ajeno (600, de un capital viejo) + pérdida real por debajo de la base
+    # (equity 400 < base 483.90). Se ignora el pico ajeno pero se mide desde la
+    # base: 17.3% de caída -> debe halt.
+    risk_cfg = RiskConfig(starting_balance=483.90, max_account_drawdown_pct=0.15)
+    risk = RiskManager(risk_cfg)
+    risk.set_ath_equity(600.0)
+
+    risk.anchor_on_start(400.0)
+
+    assert risk.ath_equity == 483.90      # anclado a la base, no a 600 ni a 400
+    risk.register_equity(400.0)           # (483.90-400)/483.90 = 17.3% -> halt
+    assert risk.halted and risk.halted_reason == "drawdown_cuenta"
+
+
+def test_anchor_on_start_small_real_loss_below_baseline_no_halt():
+    # Pérdida real pequeña (2%) por debajo de la base con pico ajeno alto: no debe
+    # halt, pero queda armado midiendo desde la base.
+    risk_cfg = RiskConfig(starting_balance=483.90, max_account_drawdown_pct=0.15)
+    risk = RiskManager(risk_cfg)
+    risk.set_ath_equity(600.0)
+
+    risk.anchor_on_start(474.0)           # ~2% por debajo de la base
+
+    assert risk.ath_equity == 483.90
+    risk.register_equity(474.0)
+    assert not risk.halted
 
 
 def test_engine_executes_emergency_close():
