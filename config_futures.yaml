@@ -47,6 +47,8 @@ xsmom:
   trend_sma: 200
   fee_pct: 0.0004               # comisión promedio de futuros
   leverage: 2.0                 # apalancamiento 2x para eficiencia de margen
+  max_notional_usdt: 100.0      # límite duro en USDT por posición
+  liquidation_buffer_pct: 0.15  # buffer de seguridad para evitar liquidación (cierre al 15%)
   poll_interval_seconds: 3600
 
 storage:

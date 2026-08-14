@@ -245,12 +245,40 @@ class LiveXSMomFuturesExecutor:
         return out
 
     def rebalance(self, targets: list[str], prices: dict[str, float]) -> float:
+        # 0) GUARDA DE LIQUIDACIÓN (Cierre de emergencia):
+        if not self.dry_run:
+            buffer = getattr(self.config.xsmom, "liquidation_buffer_pct", 0.15)
+            for sym in self.universe:
+                try:
+                    symbol_ccxt = self.exchange._normalize_symbol(sym)
+                    p = self.exchange._client.fetch_position(symbol_ccxt)
+                    if p and float(p.get("contracts", 0.0) or 0.0) > 0:
+                        liq_price = float(p.get("liquidationPrice") or 0.0)
+                        mark_price = float(p.get("markPrice") or 0.0)
+                        if liq_price > 0 and mark_price > 0:
+                            # Posición LARGA: liquida al BAJAR
+                            dist = (mark_price - liq_price) / mark_price
+                            if dist <= buffer:
+                                logger.warning("[XSMOM-FUTURES] %s a %.1f%% de liquidación (<%.0f%%): CIERRE DE EMERGENCIA",
+                                               sym, dist * 100, buffer * 100)
+                                amount_contracts = float(p.get("contracts", 0.0))
+                                self.exchange.create_futures_order(sym, "sell", amount_contracts, leverage=self.leverage)
+                                if hasattr(self.config, "notifier") and self.config.notifier:
+                                    self.config.notifier.notify(f"🛑 <b>XSMOM FUTUROS</b> {sym} cerca de liquidación ({dist*100:.1f}%): cierre de emergencia.")
+                except Exception as e:
+                    logger.warning("[XSMOM-FUTURES] error al verificar liquidación de %s: %s", sym, e)
+
         total_equity = self.equity(prices)
         if total_equity <= 0:
             logger.warning("[XSMOM-FUTURES] equity <= 0, aborto rebalanceo")
             return 0.0
 
         per_target = (total_equity * self.leverage) / len(targets) if targets else 0.0
+        
+        # Límite de Notional máximo por activo
+        max_notional = getattr(self.config.xsmom, "max_notional_usdt", 100.0)
+        per_target = min(per_target, max_notional)
+        
         tag = "DRY-RUN" if self.dry_run else "REAL"
         traded = 0.0
 
@@ -279,7 +307,7 @@ class LiveXSMomFuturesExecutor:
             
             contract_size = self.exchange.contract_size(sym)
             target_contracts = round(target_size / contract_size)
-            current_contracts = round(current_size / contract_size)
+            current_contracts = round(current_size)  # FIX: current_size ya son contratos
             
             diff_contracts = target_contracts - current_contracts
             

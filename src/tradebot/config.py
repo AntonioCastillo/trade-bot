@@ -82,6 +82,8 @@ class XSMomConfig:
     trend_sma: int = 200
     fee_pct: float = 0.001            # comisión real por lado (0.1%)
     leverage: float = 1.0             # apalancamiento en futuros
+    max_notional_usdt: float = 100.0   # tope DURO de USDT por posición (por activo)
+    liquidation_buffer_pct: float = 0.15 # cierre de emergencia si el precio queda a <15% de la liquidación
     poll_interval_seconds: int = 3600  # cada cuánto comprueba si toca rebalancear
 
 
