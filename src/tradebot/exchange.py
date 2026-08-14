@@ -41,7 +41,10 @@ class Exchange:
                 secret=creds.api_secret,
                 password=creds.api_passphrase,
             )
-        client = ccxt.kucoin(params)
+        if self.config.exchange == "kucoinfutures":
+            client = ccxt.kucoinfutures(params)
+        else:
+            client = ccxt.kucoin(params)
         if creds.is_complete:
             # Carga YA la diferencia con el reloj del servidor: sin esto, la
             # opción adjustForTimeDifference no tiene efecto en la primera
@@ -52,15 +55,29 @@ class Exchange:
                 logger.warning("No se pudo cargar la diferencia horaria del servidor")
         return client
 
+    def _normalize_symbol(self, symbol: str) -> str:
+        if self.config.exchange == "kucoinfutures" and ":" not in symbol:
+            return f"{symbol}:USDT"
+        return symbol
+
     def market_symbols(self) -> set[str]:
         """Conjunto de símbolos que el exchange ofrece realmente."""
         self._client.load_markets()
-        return set(self._client.markets.keys())
+        symbols = set(self._client.markets.keys())
+        if self.config.exchange == "kucoinfutures":
+            normalized = set()
+            for s in symbols:
+                normalized.add(s)
+                if ":" in s:
+                    normalized.add(s.split(":")[0])
+            return normalized
+        return symbols
 
     def fetch_ohlcv(
         self, symbol: str, timeframe: str, limit: int = 200
     ) -> pd.DataFrame:
         """Devuelve un DataFrame de velas indexado por tiempo (UTC)."""
+        symbol = self._normalize_symbol(symbol)
         raw = self._client.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(raw, columns=OHLCV_COLUMNS)
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
@@ -72,6 +89,7 @@ class Exchange:
     ) -> pd.DataFrame:
         """Descarga `total` velas paginando hacia atrás (KuCoin limita a ~1500
         por petición). Devuelve las `total` más recientes, ordenadas por tiempo."""
+        symbol = self._normalize_symbol(symbol)
         tf_ms = self._client.parse_timeframe(timeframe) * 1000
         now = self._client.milliseconds()
         since = now - total * tf_ms
@@ -94,6 +112,7 @@ class Exchange:
         """Histórico de funding rates del perpetuo (KuCoin futures), paginado.
         `symbol` en formato unificado ccxt, p.ej. 'BTC/USDT:USDT'. Público."""
         import ccxt
+        symbol = self._normalize_symbol(symbol)
 
         cl = ccxt.kucoinfutures({"enableRateLimit": True})
         period_ms = 8 * 3600 * 1000   # funding cada 8h
@@ -121,6 +140,7 @@ class Exchange:
         """Último precio. Una recién listada puede no tener 'last' aún (sin trades):
         cae a close/bid/ask y, si tampoco hay, lanza ValueError limpio (no TypeError
         por float(None))."""
+        symbol = self._normalize_symbol(symbol)
         ticker = self._client.fetch_ticker(symbol)
         price = (ticker.get("last") or ticker.get("close")
                  or ticker.get("bid") or ticker.get("ask"))
@@ -144,6 +164,7 @@ class Exchange:
 
     def market_limits(self, symbol: str) -> dict:
         """Devuelve mínimos de coste (quote) y cantidad (base) del par."""
+        symbol = self._normalize_symbol(symbol)
         self._client.load_markets()
         m = self._client.market(symbol)
         limits = m.get("limits") or {}
@@ -153,6 +174,7 @@ class Exchange:
         }
 
     def amount_to_precision(self, symbol: str, amount: float) -> float:
+        symbol = self._normalize_symbol(symbol)
         self._client.load_markets()
         return float(self._client.amount_to_precision(symbol, amount))
 
@@ -161,6 +183,7 @@ class Exchange:
     def _await_fill(self, order: dict, symbol: str, retries: int = 6, delay: float = 0.5) -> dict:
         """KuCoin no devuelve la cantidad ejecutada al crear la orden (solo el ID):
         hay que consultar la orden después. Reintenta hasta que aparezca el fill."""
+        symbol = self._normalize_symbol(symbol)
         order_id = order.get("id") or (order.get("info") or {}).get("orderId")
         if not order_id:
             return order
@@ -180,6 +203,7 @@ class Exchange:
 
         KuCoin usa el importe en quote para las compras a mercado (`funds`), no
         la cantidad de moneda base. ccxt lo maneja con la variante 'with_cost'."""
+        symbol = self._normalize_symbol(symbol)
         self._client.load_markets()
         cost = float(self._client.cost_to_precision(symbol, cost))
         logger.warning("Enviando COMPRA REAL: %s por %s (quote)", symbol, cost)
@@ -194,8 +218,42 @@ class Exchange:
 
     def create_market_sell(self, symbol: str, amount: float) -> dict:
         """Vende a mercado `amount` en moneda base, ajustado a la precisión."""
+        symbol = self._normalize_symbol(symbol)
         self._client.load_markets()
         amount = float(self._client.amount_to_precision(symbol, amount))
         logger.warning("Enviando VENTA REAL: %s x %s", symbol, amount)
         order = self._client.create_order(symbol, "market", "sell", amount)
+        return self._await_fill(order, symbol)
+
+    def contract_size(self, symbol: str) -> float:
+        symbol = self._normalize_symbol(symbol)
+        self._client.load_markets()
+        return float(self._client.market(symbol).get("contractSize") or 1.0)
+
+    def contracts_for_notional(self, symbol: str, notional: float, price: float) -> float:
+        symbol = self._normalize_symbol(symbol)
+        if price <= 0:
+            return 0.0
+        raw = notional / (price * self.contract_size(symbol))
+        self._client.load_markets()
+        try:
+            contracts = float(self._client.amount_to_precision(symbol, raw))
+        except Exception:
+            contracts = float(int(raw))
+        return contracts
+
+    def create_futures_order(self, symbol: str, side: str, contracts: float, leverage: float = 1.0) -> dict:
+        symbol = self._normalize_symbol(symbol)
+        self._client.load_markets()
+        contracts = float(self._client.amount_to_precision(symbol, contracts))
+        logger.warning("Enviando ORDEN DE FUTUROS REAL (%s): %s x %s contratos (lev %sx)",
+                       side.upper(), symbol, contracts, leverage)
+        try:
+            self._client.set_leverage(leverage, symbol, {"marginMode": "isolated"})
+        except Exception:
+            logger.warning("No se pudo fijar apalancamiento %sx aislado en %s", leverage, symbol)
+        order = self._client.create_order(
+            symbol, "market", side, contracts, None,
+            {"leverage": leverage, "marginMode": "isolated"}
+        )
         return self._await_fill(order, symbol)

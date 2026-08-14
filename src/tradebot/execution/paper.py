@@ -20,7 +20,10 @@ logger = logging.getLogger(__name__)
 class PaperExecutionEngine:
     def __init__(self, config: Config):
         self.config = config
-        self.fee_pct = config.engine.fee_pct
+        if config.exchange == "kucoinfutures":
+            self.fee_pct = 0.0004  # tasa de futuros más baja (promedio maker/taker)
+        else:
+            self.fee_pct = config.engine.fee_pct
         self.slippage_pct = config.engine.slippage_pct
         self._balance = config.risk.starting_balance  # en moneda de cotización
 

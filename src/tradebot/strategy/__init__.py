@@ -12,6 +12,8 @@ from .momentum import MomentumStrategy
 from .scalping import ScalpingStrategy
 from .trend import TrendStrategy
 from .volume_surge import VolumeSurgeStrategy
+from .capitulation import CapitulationStrategy
+from .range_reversion import RangeReversionStrategy
 
 _REGISTRY: dict[str, type[Strategy]] = {
     "mean_reversion": MeanReversionStrategy,
@@ -21,6 +23,8 @@ _REGISTRY: dict[str, type[Strategy]] = {
     "scalping": ScalpingStrategy,
     "breakout": BreakoutStrategy,
     "trend": TrendStrategy,
+    "capitulation": CapitulationStrategy,
+    "range_reversion": RangeReversionStrategy,
 }
 
 
@@ -44,5 +48,7 @@ __all__ = [
     "ScalpingStrategy",
     "BreakoutStrategy",
     "TrendStrategy",
+    "CapitulationStrategy",
+    "RangeReversionStrategy",
     "build_strategy",
 ]

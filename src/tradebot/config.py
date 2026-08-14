@@ -84,6 +84,17 @@ class XSMomConfig:
 
 
 @dataclass
+class HedgingConfig:
+    """Configuración de la cobertura dinámica (hedging)."""
+
+    enabled: bool = False
+    symbol: str = "BTC/USDT"
+    ratio: float = 0.5
+    min_positions: int = 2
+
+
+
+@dataclass
 class Instrument:
     """Un símbolo concreto ya resuelto con su estrategia y su riesgo efectivo."""
 
@@ -130,6 +141,7 @@ class Config:
     sniper: SniperConfig = field(default_factory=SniperConfig)
     carry: CarryConfig = field(default_factory=CarryConfig)
     xsmom: XSMomConfig = field(default_factory=XSMomConfig)
+    hedging: HedgingConfig = field(default_factory=HedgingConfig)
     db_path: str = "data/tradebot.db"
     log_level: str = "INFO"
     credentials: Credentials = field(default_factory=Credentials)
@@ -225,6 +237,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     sniper = SniperConfig(**(raw.get("sniper") or {}))
     carry = CarryConfig(**(raw.get("carry") or {}))
     xsmom = XSMomConfig(**(raw.get("xsmom") or {}))
+    hedging = HedgingConfig(**(raw.get("hedging") or {}))
     global_timeframe = raw.get("timeframe", "1h")
     instruments = _build_instruments(raw.get("universe") or [], risk, global_timeframe)
 
@@ -247,6 +260,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         sniper=sniper,
         carry=carry,
         xsmom=xsmom,
+        hedging=hedging,
         db_path=(raw.get("storage") or {}).get("db_path", "data/tradebot.db"),
         log_level=(raw.get("logging") or {}).get("level", "INFO"),
         credentials=credentials,

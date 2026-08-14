@@ -34,8 +34,17 @@ DB_PATH = "data/backtest.db"
 
 
 def main() -> None:
-    limit = int(sys.argv[1]) if len(sys.argv) > 1 else 1000
-    config = load_config()
+    limit = 1000
+    config_path = "config.yaml"
+    for arg in sys.argv[1:]:
+        if arg.endswith(".yaml"):
+            config_path = arg
+        else:
+            try:
+                limit = int(arg)
+            except ValueError:
+                pass
+    config = load_config(config_path)
     config.mode = "paper"
     setup_logging("WARNING")
 
@@ -52,7 +61,7 @@ def main() -> None:
         symbol = ins.symbol
         try:
             # Cada cabeza con SU timeframe (no el global): trend1d=1d, volumen5m=5m…
-            candles = exchange.fetch_ohlcv(symbol, ins.timeframe, limit=limit)
+            candles = exchange.fetch_ohlcv_history(symbol, ins.timeframe, total=limit)
         except Exception as e:
             print(f"[SKIP] {symbol}: no se pudieron descargar datos ({e})")
             continue

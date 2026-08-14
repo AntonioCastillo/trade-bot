@@ -14,7 +14,7 @@ import logging
 
 import pandas as pd
 
-from .config import Config
+from .config import Config, Instrument
 from .execution.base import ExecutionEngine, OrderRejected
 from .models import ClosedTrade, Order, Position, Side, SignalType
 from .notifier import Notifier, NullNotifier
@@ -65,6 +65,124 @@ class Engine:
 
         if self.enforce_daily_loss:
             self.risk.register_equity(self.equity())
+
+        self._rebalance_hedging()
+
+    def _rebalance_hedging(self) -> None:
+        if not hasattr(self.config, "hedging") or not self.config.hedging.enabled:
+            return
+
+        hedge_cfg = self.config.hedging
+        hedge_symbol = hedge_cfg.symbol
+
+        # Calcular exposición de altcoins (excluyendo el propio símbolo de cobertura)
+        total_alt_exposure = 0.0
+        num_alt_positions = 0
+        for pos in self.positions:
+            if pos.symbol == hedge_symbol:
+                continue
+            current_price = self.last_prices.get(pos.symbol, pos.entry_price)
+            pos_val = current_price * pos.amount
+            if pos.side is Side.BUY:
+                total_alt_exposure += pos_val
+                num_alt_positions += 1
+            else:
+                total_alt_exposure -= pos_val
+
+        # Determinar el precio de la cobertura (BTC/USDT)
+        btc_price = self.last_prices.get(hedge_symbol)
+        if btc_price is None and self.exchange is not None:
+            try:
+                btc_price = self.exchange.fetch_last_price(hedge_symbol)
+                self.last_prices[hedge_symbol] = btc_price
+            except Exception:
+                pass
+
+        if btc_price is None or btc_price <= 0:
+            return
+
+        # Calcular el tamaño objetivo del corto de cobertura
+        if num_alt_positions >= hedge_cfg.min_positions:
+            target_hedge_usd = total_alt_exposure * hedge_cfg.ratio
+        else:
+            target_hedge_usd = 0.0
+
+        target_amount = target_hedge_usd / btc_price
+
+        # Encontrar cobertura actual
+        current_hedge_pos = None
+        for pos in self.positions:
+            if pos.symbol == hedge_symbol and pos.side is Side.SELL:
+                current_hedge_pos = pos
+                break
+
+        current_amount = current_hedge_pos.amount if current_hedge_pos else 0.0
+        diff_amount = target_amount - current_amount
+
+        # Decidir si la diferencia es significativa
+        significant = False
+        if target_amount > 0:
+            diff_pct = abs(diff_amount) / target_amount
+            diff_usd = abs(diff_amount) * btc_price
+            if (current_amount == 0) or (diff_pct > 0.15 and diff_usd > 15.0):
+                significant = True
+        elif current_amount > 0:
+            significant = True
+
+        if not significant:
+            return
+
+        logger.info(
+            "[HEDGE] Ajustando cobertura: alt_exp=%.2f, target_usd=%.2f, target_amt=%.6f, current_amt=%.6f",
+            total_alt_exposure, target_hedge_usd, target_amount, current_amount
+        )
+
+        # 1) Cerrar cobertura existente si la hay
+        if current_hedge_pos:
+            close_side = Side.BUY
+            reason = "hedge_close" if target_amount == 0 else "hedge_adjust_close"
+            close_order = Order(hedge_symbol, close_side, current_amount, btc_price, reason=reason)
+            if self._close_position(current_hedge_pos, close_order):
+                self.positions = [p for p in self.positions if p is not current_hedge_pos]
+
+        # 2) Abrir nueva cobertura si es necesario
+        if target_amount > 0:
+            reason = "hedge_open" if current_amount == 0 else "hedge_adjust_open"
+            order = Order(hedge_symbol, Side.SELL, target_amount, btc_price, reason=reason)
+            try:
+                fill = self.execution.execute(order)
+                self.storage.record_fill(fill)
+                
+                # Obtener o construir Instrument para la cobertura
+                instrument = None
+                try:
+                    instrument = self.config.instrument(hedge_symbol)
+                except KeyError:
+                    pass
+                if not instrument:
+                    instrument = Instrument(
+                        symbol=hedge_symbol, category="hedging", strategy_name="hedge",
+                        strategy_params={}, stop_loss_pct=0.5, take_profit_pct=0.5,
+                        position_size_pct=0.0, timeframe="1h"
+                    )
+                position = self.risk.build_position(
+                    instrument, Side.SELL, fill.filled_amount,
+                    fill.filled_price, fill.fee, reason
+                )
+                self.positions.append(position)
+                self.storage.save_open_position(position)
+                self._save_cash()
+                logger.info(
+                    "[HEDGE] Nueva cobertura corta BTC abierta: %.4f @ %.2f",
+                    fill.filled_amount, fill.filled_price
+                )
+                self.notifier.notify(
+                    f"🛡️ <b>ABRE COBERTURA</b> SHORT {hedge_symbol}\n"
+                    f"Precio: {fill.filled_price:.2f}  |  Tamaño: {fill.filled_amount:.6f}\n"
+                    f"Motivo: {reason}"
+                )
+            except Exception as e:
+                logger.warning("[HEDGE] No se pudo abrir la cobertura: %s", e)
 
     def _check_exits(self, symbol: str, current_price: float) -> None:
         still_open: list[Position] = []

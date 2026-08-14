@@ -32,7 +32,34 @@ CONFIRM = "SI OPERAR EN REAL"
 
 
 def main() -> None:
-    config = load_config()
+    config_path = "config.yaml"
+    
+    # Leer el modo desde la variable de entorno MODO o TRADEBOT_MODO (para entornos sin consola/VPS)
+    env_modo = os.environ.get("MODO", os.environ.get("TRADEBOT_MODO", "")).strip().lower()
+    if env_modo in ("futuros", "futures"):
+        config_path = "config_futures.yaml"
+        print(">>> [ENV] Cargando configuración de FUTUROS (config_futures.yaml)")
+    elif env_modo == "spot":
+        config_path = "config.yaml"
+        print(">>> [ENV] Cargando configuración de SPOT (config.yaml)")
+
+    # Los argumentos por línea de comandos tienen prioridad sobre la variable de entorno
+    if len(sys.argv) > 1:
+        if "futures" in sys.argv or "futuros" in sys.argv:
+            config_path = "config_futures.yaml"
+            print(">>> [ARG] Cargando configuración de FUTUROS (config_futures.yaml)")
+        elif "spot" in sys.argv:
+            config_path = "config.yaml"
+            print(">>> [ARG] Cargando configuración de SPOT (config.yaml)")
+        else:
+            # Comprobar si se ha pasado un archivo .yaml personalizado
+            for arg in sys.argv[1:]:
+                if arg.endswith(".yaml") and Path(arg).exists():
+                    config_path = arg
+                    print(f">>> [ARG] Cargando configuración personalizada: {config_path}")
+                    break
+
+    config = load_config(config_path)
 
     # Confirmación para operar en real. En terminal interactiva se pregunta; en
     # headless (systemd/VPS) se usa la variable de entorno TRADEBOT_LIVE_CONFIRM.
