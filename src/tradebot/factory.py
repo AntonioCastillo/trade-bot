@@ -49,7 +49,9 @@ def build_engine(config: Config | None = None, log_file: str | None = None) -> E
     if ath_equity is not None:
         risk.set_ath_equity(ath_equity)
         
-    risk.reset_day(config.risk.starting_balance)
+    if config.mode != "live":
+        risk.reset_day(config.risk.starting_balance)
+        
     execution = build_execution_engine(config, exchange)
     market_str = "FUTUROS" if config.exchange == "kucoinfutures" else "SPOT"
     tag = f"🔴 [REAL - {market_str}]" if config.mode == "live" else f"🧪 [SIMULACIÓN - {market_str}]"

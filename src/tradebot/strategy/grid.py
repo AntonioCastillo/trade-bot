@@ -27,7 +27,7 @@ class GridStrategy(Strategy):
         levels: int = 10,
         adx_period: int = 14,
         adx_max: float = 25.0,
-        bidirectional: bool = True,
+        bidirectional: bool = False,
     ):
         self.range_period = range_period
         self.levels = max(2, levels)

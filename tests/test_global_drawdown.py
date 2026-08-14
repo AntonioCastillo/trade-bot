@@ -44,6 +44,8 @@ def test_engine_executes_emergency_close():
     
     strategies = {"ADA/USDT": strategy_mock}
     risk = RiskManager(risk_cfg)
+    risk.set_ath_equity(1000.0)
+    risk.reset_day(1000.0)
     execution = MagicMock()
     storage = MagicMock()
     storage.get_state = MagicMock(return_value=None)

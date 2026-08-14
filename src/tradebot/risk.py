@@ -28,7 +28,7 @@ class RiskManager:
         self._day_start_equity: float | None = None
         self._halted = False
         self._halted_reason = ""
-        self.ath_equity = config.starting_balance
+        self.ath_equity = 0.0
         self.global_drawdown = 0.0
 
     def set_ath_equity(self, value: float) -> None:
@@ -51,7 +51,11 @@ class RiskManager:
                 )
 
         # 2. Pérdida global de la cuenta (desde ATH)
-        self.ath_equity = max(self.ath_equity, equity)
+        if self.ath_equity <= 0.0:
+            self.ath_equity = equity
+        else:
+            self.ath_equity = max(self.ath_equity, equity)
+
         self.global_drawdown = (self.ath_equity - equity) / self.ath_equity
         max_global = getattr(self.config, "max_account_drawdown_pct", 0.15)
         if max_global > 0 and self.global_drawdown >= max_global and not self._halted:
