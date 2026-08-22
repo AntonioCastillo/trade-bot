@@ -15,6 +15,30 @@ DEFAULT_SNIPER_PATH = "data/sniper_status.json"
 DEFAULT_XSMOM_PATH = "data/xsmom_status.json"
 
 
+def status_slot(config) -> str:
+    """Etiqueta corta de la instancia, para que spot y futuros NO se pisen los
+    ficheros de estado (spot y futuros corren como procesos separados)."""
+    return "futuros" if getattr(config, "exchange", "") == "kucoinfutures" else "spot"
+
+
+def _slot_path(base: str, slot: str) -> str:
+    """data/status.json -> data/status_<slot>.json."""
+    p = Path(base)
+    return str(p.with_name(f"{p.stem}_{slot}{p.suffix}"))
+
+
+def status_path(slot: str) -> str:
+    return _slot_path(DEFAULT_STATUS_PATH, slot)
+
+
+def sniper_path(slot: str) -> str:
+    return _slot_path(DEFAULT_SNIPER_PATH, slot)
+
+
+def xsmom_path(slot: str) -> str:
+    return _slot_path(DEFAULT_XSMOM_PATH, slot)
+
+
 def active_heads(config) -> list[dict]:
     """Cabezas activas agrupadas por categoría, con su estrategia/tf/símbolos."""
     groups: "OrderedDict[str, dict]" = OrderedDict()
@@ -46,6 +70,29 @@ def build_status(engine, config) -> dict[str, Any]:
     except Exception:
         pass
 
+    open_positions: list[dict] = []
+    try:
+        for p in engine.positions:
+            curr_p = engine.last_prices.get(p.symbol, p.entry_price)
+            pnl_abs = (curr_p - p.entry_price) * p.amount if p.side.value == "buy" else (p.entry_price - curr_p) * p.amount
+            pnl_pct = (pnl_abs / (p.entry_price * p.amount)) * 100 if (p.entry_price * p.amount) else 0.0
+            open_positions.append({
+                "symbol": p.symbol,
+                "category": p.category,
+                "strategy": p.strategy_name,
+                "side": p.side.value,
+                "amount": p.amount,
+                "entry_price": round(p.entry_price, 6),
+                "current_price": round(curr_p, 6),
+                "stop_loss": round(p.stop_loss, 6),
+                "take_profit": round(p.take_profit, 6),
+                "pnl_abs": round(pnl_abs, 2),
+                "pnl_pct": round(pnl_pct, 2),
+                "opened_at": p.opened_at,
+            })
+    except Exception:
+        pass
+
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mode": config.mode,
@@ -54,6 +101,7 @@ def build_status(engine, config) -> dict[str, Any]:
         "equity": equity,
         "starting_balance": config.risk.starting_balance,
         "closed_trades": s["trades"],
+        "open_positions": open_positions,
         "pnl_abs": round(s["pnl_abs"], 2),
         "win_rate": round(s["win_rate"], 3),
         "avg_pnl_pct": round(s["avg_pnl_pct"], 3),
@@ -65,8 +113,10 @@ def build_status(engine, config) -> dict[str, Any]:
     }
 
 
-def write_status(engine, config, path: str = DEFAULT_STATUS_PATH) -> None:
-    """Vuelca el status a disco (JSON). Lo llama el daemon en cada informe."""
+def write_status(engine, config, path: str | None = None) -> None:
+    """Vuelca el status a disco (JSON) en el fichero de ESTA instancia
+    (data/status_<slot>.json). Lo llama el daemon en cada informe."""
+    path = path or status_path(status_slot(config))
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(build_status(engine, config), indent=2, ensure_ascii=False),
@@ -101,3 +151,24 @@ def load_merged(status_path: str = DEFAULT_STATUS_PATH,
     data = json.loads(Path(status_path).read_text(encoding="utf-8"))
     merge_sniper(data, sniper_path)
     return merge_xsmom(data, xsmom_path)
+
+
+def load_unified(data_dir: str = "data") -> dict:
+    """UN solo JSON con TODAS las instancias (spot y futuros). Recorre cada
+    data/status_<slot>.json, le fusiona su sniper/xsmom del mismo slot, y los
+    agrupa bajo `instances`. Así spot y futuros conviven sin pisarse."""
+    instances: dict[str, Any] = {}
+    d = Path(data_dir)
+    for f in sorted(d.glob("status_*.json")):
+        slot = f.stem[len("status_"):]
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        merge_sniper(data, str(d / f"sniper_status_{slot}.json"))
+        merge_xsmom(data, str(d / f"xsmom_status_{slot}.json"))
+        instances[slot] = data
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "instances": instances,
+    }
