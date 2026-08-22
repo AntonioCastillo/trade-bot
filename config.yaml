@@ -1,117 +1,133 @@
 # Configuración del bot. Los secretos van en .env, aquí solo parámetros.
 
-mode: paper           # paper | live. El arranque pide confirmación: sin ella = paper
+mode: live           # paper | live. El arranque en run.py confirma si live
 exchange: kucoin
 
 # Datos de mercado. timeframe = marco por defecto; cada cabeza puede usar el suyo.
 timeframe: 4h          # por defecto 4h (donde el edge-scanner encontró señal)
 lookback: 300          # nº de velas a mantener para los indicadores
 
-# LA HIDRA: cada cabeza con su estrategia, su timeframe y su riesgo.
-# ESTRATEGIA ÚNICA EN REAL (2026-08-14): la cabeza `xsmom` (momentum transversal,
-# más abajo) controla la cuenta. El `universe` del engine va VACÍO (las cabezas
-# por-símbolo chocarían con el rebalanceador de xsmom en la misma cuenta).
-universe: []
-  # VACÍO A PROPÓSITO: la cabeza `xsmom` (momentum transversal, abajo) es ahora la
-  # ÚNICA estrategia direccional y CONTROLA LA CUENTA en real. momentum1d/breakout1d
-  # quedan SUBSUMIDAS por xsmom (mismos majors, pero cross-sectional): correr un
-  # rebalanceador de cartera JUNTO a cabezas por-símbolo en la misma cuenta corrompe
-  # la contabilidad de ambos, así que se retiran. Reactivar solo si xsmom se aparta.
-  # Params guardados por si se vuelven a cablear (paper): momentum1d(BNB,ADA @1d,
-  # OOS +10/+12%), breakout1d(SOL,AVAX @1d, OOS +26/+10%).
+# LA HIDRA MULTICABEZA: cada cabeza especializada en su régimen y sus símbolos.
+universe:
+  # 🟢 Rupturas Rápidas (Captura despegues alcistas verticales)
+  - name: breakout_diario
+    symbols: [SOL/USDT, AVAX/USDT]
+    strategy: breakout
+    timeframe: 1d
+    params:
+      lookback: 20
+      bidirectional: false
+      min_bb_width: 0.02
+    risk:
+      stop_loss_pct: 0.08
+      take_profit_pct: 0.30
+      trailing_stop_pct: 0.10
+      position_size_pct: 0.15
 
-  # Eliminadas tras verlas sangrar en vivo (confirmando la validación):
-  #   - grid_obs   (LTC @1h):       acumulaba bolsa underwater (la trampa del -72%).
-  #   - volumen5m  (SHIB/PEPE @5m): -6.80 USDT en vivo, 0% aciertos; sin edge.
-  #   - scalping5m (XRP/DOGE @5m):  DESACTIVADA (2026-08-13). Medida inviable por 4
-  #       vías: (1) matemática (coste 0.3% real vs objetivo 0.5% -> break-even 80%),
-  #       (2) filtros (trend/vol/RSI/ATR: ningún filtro pasa de ~50% win, y en BRUTO
-  #       la señal ya pierde), (3) comisión real 0.1%/lado confirmada en fills (K4 no
-  #       la baja), (4) live -0.22 USDT, 33% aciertos. El cruce EMA5/20 a 5m no tiene
-  #       edge; filtrarlo no lo crea. Solo sería viable con rebates de market maker.
-  # ACTIVA (real): SOLO xsmom (momentum transversal, abajo). El resto retirado/apagado
-  # para que xsmom controle la cuenta sin conflictos. (trend1d/reversion4h aparcadas;
-  # momentum1d/breakout1d subsumidas por xsmom; sniper y carry APAGADOS.)
+  # 🟢 Tendencia Confirmada (Momentum sólido con filtro EMA/ATR)
+  - name: momentum_diario
+    symbols: [BNB/USDT, ADA/USDT]
+    strategy: momentum
+    timeframe: 1d
+    params:
+      fast_ema: 10
+      slow_ema: 30
+      breakout_lookback: 20
+      breakout_atr_mult: 0.5
+      volume_mult: 1.0
+      bidirectional: false
+      min_bb_width: 0.02
+    risk:
+      stop_loss_pct: 0.08
+      take_profit_pct: 0.30
+      trailing_stop_pct: 0.10
+      position_size_pct: 0.15
+
+  # 🟢 Rango Lateral (Reversión a la media en Bollinger con filtro ADX <= 25)
+  - name: reversion_rango
+    symbols: [LINK/USDT, LTC/USDT]
+    strategy: range_reversion
+    timeframe: 4h
+    params:
+      adx_period: 14
+      adx_max: 25.0
+      rsi_period: 14
+      rsi_oversold: 30.0
+      rsi_overbought: 70.0
+      bb_period: 20
+      bb_std: 2.0
+      bidirectional: false
+    risk:
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.10
+      trailing_stop_pct: 0.03
+      position_size_pct: 0.15
+
+  # 🟢 Rejilla de Acumulación (Grid Trading en 4h con filtro ADX)
+  - name: grid_lateral
+    symbols: [NEAR/USDT]
+    strategy: grid
+    timeframe: 4h
+    params:
+      range_period: 100
+      levels: 10
+      adx_period: 14
+      adx_max: 25.0
+      bidirectional: false
+    risk:
+      stop_loss_pct: 0.08
+      take_profit_pct: 0.02
+      position_size_pct: 0.06
+      max_concurrent_per_symbol: 5
+
+  # 🟢 Caza de Pánicos (Capitulación / Comprar caídas extremas con RSI < 20)
+  - name: capitulacion
+    symbols: [XRP/USDT, DOGE/USDT]
+    strategy: capitulation
+    timeframe: 4h
+    params:
+      rsi_period: 14
+      rsi_oversold: 20.0
+      lookback: 20
+      drop_pct: 0.05
+      volume_mult: 2.0
+    risk:
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.15
+      trailing_stop_pct: 0.03
+      position_size_pct: 0.15
 
 risk:
   quote_currency: USDT
-  starting_balance: 1000        # saldo simulado (paper) para OBSERVAR con números legibles
-  position_size_pct: 0.08       # por defecto (cada cabeza puede sobrescribir)
-  max_open_positions: 6         # 2 cabezas × 2 símbolos + margen (sniper va aparte)
-  stop_loss_pct: 0.05           # defaults; cada categoría puede sobrescribir
+  starting_balance: 480.00      # saldo real de cuenta
+  position_size_pct: 0.10       # tamaño base por operación
+  max_open_positions: 10        # capacidad para niveles de grid + posiciones de tendencia
+  stop_loss_pct: 0.05
   take_profit_pct: 0.03
-  max_daily_loss_pct: 0.20      # corte diario (paper, con muchas cabezas)
-  max_account_drawdown_pct: 0.15
+  max_daily_loss_pct: 0.20      # cortafuegos diario
+  max_account_drawdown_pct: 0.15 # disyuntor global de cuenta (cierre de emergencia al 15%)
 
 engine:
-  poll_interval_seconds: 60     # cada cuánto revisa el mercado (modo live paper)
-  fee_pct: 0.00078              # comisión por operación (0.1% con -22% de descuento)
-  slippage_pct: 0.0005          # deslizamiento estimado por operación (0.05%)
-  report_interval_seconds: 900  # cada cuánto vuelca el informe a data/report.txt
+  poll_interval_seconds: 60     # ciclo cada 60s
+  fee_pct: 0.0010              # comisión spot estándar (0.1%)
+  slippage_pct: 0.0005          # deslizamiento estimado
+  report_interval_seconds: 900  # informe cada 15 min
   alive_interval_seconds: 21600 # señal de vida a Telegram (6 h)
-  error_notify_interval_seconds: 1800  # anti-spam de avisos de fallo (30 min)
+  error_notify_interval_seconds: 1800
 
-# Sniper de recién listadas (EXPERIMENTAL, ALTO RIESGO). No validable con
-# backtesting: es apostar, no invertir. Modo "BILLETE DE LOTERÍA": entrada
-# pequeña en cada moneda nueva, SIN stop y SIN timeout, salir en x9.
-# Objetivo x9 = máximo VALOR ESPERADO en el rango x5-x10 (medido sobre monedas
-# KuCoin vivas: EV ~2.8x/billete; ~28% tocaron x9 alguna vez). OJO: es EV con
-# SESGO DE SUPERVIVENCIA (las muertas/delistadas no cuentan) -> optimista; el real
-# es menor. Casi todas morirán igual; el resumen del log da el mark-to-market.
 sniper:
-  enabled: false                # APAGADO: xsmom controla la cuenta (compite por el USDT)
-  poll_interval_seconds: 30     # cada cuánto busca nuevos listings
-  position_size_pct: 0.01       # 1% por tiro (poco capital: es un billete)
-  take_profit_pct: 8.0          # objetivo x9 (+800%); único punto de salida
-  stop_loss_pct: 0.0            # 0 = SIN stop (se aguanta el billete)
-  timeout_minutes: 0            # 0 = SIN timeout (aguantar hasta el x9)
-  max_concurrent: 50            # muchos billetes a la vez (para ver resultados a lo ancho)
+  enabled: false
 
-# Funding-rate carry delta-neutral (long spot + short perp).
-# EL MODO MANDA: con mode:paper el carry es paper; con mode:live va REAL como el
-# resto (nada se queda en paper mientras operas en real). En live necesita claves
-# con permiso de FUTUROS en .env y USDT en el monedero de futuros (margen del corto).
-# Única salvaguarda: la 1ª vez en live arranca en DRY-RUN (registra las órdenes
-# spot+perp con datos REALES pero SIN enviarlas). Para operar de verdad, exporta:
-#   TRADEBOT_CARRY_LIVE_CONFIRM="SI FUTUROS REAL"
 carry:
-  enabled: false                # APAGADO (no meter fondos en futuros por ahora)
-  symbols: [ETH/USDT, XRP/USDT, DOGE/USDT]   # spot; el perp se deduce (+ ":USDT")
-  notional_pct: 0.20            # % del balance por posición
-  # A funding bajo (un dígito) manda el BASIS (±3-8%), no el funding (~0.5%): es
-  # lotería, no edge (medido con scripts/carry_threshold.py). Solo despertar en
-  # picos genuinos de funding, que superan basis+comisiones (euforia alcista).
-  min_annualized_pct: 30.0      # abrir solo si el funding anualizado supera esto
-  exit_annualized_pct: 10.0     # cerrar al caer por debajo (histéresis)
-  poll_interval_seconds: 300
-  fee_pct: 0.0008               # comisión por pata (aprox)
-  # --- Ejecución real de futuros (se activa sola con mode:live; riesgo de liquidación) ---
-  leverage: 1.0                 # 1x = la liquidación queda a ~100% de distancia (lo más seguro)
-  max_notional_usdt: 50.0       # TOPE DURO de USDT por posición (empieza pequeño)
-  liquidation_buffer_pct: 0.15  # cierre de emergencia si el precio queda a <15% de la liquidación
+  enabled: false
 
-# Momentum transversal (cross-sectional): rankea la cesta, mantiene el top-K
-# equal-weight (solo-largos), rebalanceo semanal, a CASH si BTC<SMA200.
-# Validado walk-forward: bate al equal-weight OOS (+6.5 pts/año), el exceso aguanta
-# algo en bear con lookback corto, y el overlay de tendencia baja el drawdown de
-# ~74% a ~47% (Sharpe ~1.2). Corre en PAPER (subsistema aparte, como el carry).
 xsmom:
-  enabled: true
-  universe: [BTC/USDT, ETH/USDT, BNB/USDT, XRP/USDT, ADA/USDT, SOL/USDT,
-             DOGE/USDT, LINK/USDT, LTC/USDT, AVAX/USDT, DOT/USDT, ATOM/USDT,
-             UNI/USDT, TRX/USDT, XLM/USDT, ETC/USDT, NEAR/USDT, FIL/USDT]
-  lookback_days: 30             # ventana de momentum (corta = aguanta mejor en bear)
-  top_k: 3                      # nº de activos mantenidos (equal-weight)
-  rebalance_days: 7             # rebalanceo semanal
-  trend_filter: true            # a CASH cuando BTC < SMA200 (overlay que doma el DD)
-  trend_symbol: BTC/USDT
-  trend_sma: 200
-  fee_pct: 0.001                # 0.1% por lado (real)
-  poll_interval_seconds: 3600   # comprueba cada hora si toca rebalancear
+  enabled: false                # APAGADO: la Hidra multicabeza de arriba controla la cuenta
+
+hedging:
+  enabled: false
 
 storage:
-  # Se separa por MODO automáticamente: data/tradebot_paper.db y
-  # data/tradebot_live.db (paper y live nunca mezclan histórico).
   db_path: data/tradebot.db
 
 logging:
