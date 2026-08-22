@@ -3,8 +3,7 @@
 mode: live           # paper | live. El arranque en run.py confirma si live
 exchange: kucoin
 
-# Datos de mercado. timeframe = marco por defecto; cada cabeza puede usar el suyo.
-timeframe: 4h          # por defecto 4h (donde el edge-scanner encontró señal)
+timeframe: 4h          # por defecto 4h
 lookback: 300          # nº de velas a mantener para los indicadores
 
 # LA HIDRA MULTICABEZA: cada cabeza especializada en su régimen y sus símbolos.
@@ -22,7 +21,7 @@ universe:
       stop_loss_pct: 0.08
       take_profit_pct: 0.30
       trailing_stop_pct: 0.10
-      position_size_pct: 0.15
+      position_size_pct: 0.20
 
   # 🟢 Tendencia Confirmada (Momentum sólido con filtro EMA/ATR)
   - name: momentum_diario
@@ -41,7 +40,7 @@ universe:
       stop_loss_pct: 0.08
       take_profit_pct: 0.30
       trailing_stop_pct: 0.10
-      position_size_pct: 0.15
+      position_size_pct: 0.20
 
   # 🟢 Rango Lateral (Reversión a la media en Bollinger con filtro ADX <= 25)
   - name: reversion_rango
@@ -61,7 +60,7 @@ universe:
       stop_loss_pct: 0.05
       take_profit_pct: 0.10
       trailing_stop_pct: 0.03
-      position_size_pct: 0.15
+      position_size_pct: 0.20
 
   # 🟢 Rejilla de Acumulación (Grid Trading en 4h con filtro ADX)
   - name: grid_lateral
@@ -95,13 +94,13 @@ universe:
       stop_loss_pct: 0.05
       take_profit_pct: 0.15
       trailing_stop_pct: 0.03
-      position_size_pct: 0.15
+      position_size_pct: 0.20
 
 risk:
   quote_currency: USDT
   starting_balance: 480.00      # saldo real de cuenta
-  position_size_pct: 0.10       # tamaño base por operación
-  max_open_positions: 10        # capacidad para niveles de grid + posiciones de tendencia
+  position_size_pct: 0.20       # tamaño base por operación (20% = ~$96 USD)
+  max_open_positions: 8         # capacidad para 4 posiciones direccionales + niveles de grid
   stop_loss_pct: 0.05
   take_profit_pct: 0.03
   max_daily_loss_pct: 0.20      # cortafuegos diario
