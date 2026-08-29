@@ -487,6 +487,15 @@ class Engine:
         restaura también el efectivo simulado para que el equity cuadre. En live
         RECONCILIA contra el saldo real de KuCoin (descarta/ajusta lo que no cuadre)."""
         self.positions = self.storage.load_open_positions()
+        for pos in self.positions:
+            try:
+                ins = self.config.instrument(pos.symbol)
+                if pos.partial_tp_pct == 0.0 and getattr(ins, "partial_take_profit_pct", 0.0) > 0:
+                    pos.partial_tp_pct = ins.partial_take_profit_pct
+                    pos.partial_tp_ratio = ins.partial_take_profit_ratio
+            except KeyError:
+                pass
+
         setter = getattr(self.execution, "set_balance", None)   # solo el motor paper
         cash = self.storage.get_state("paper_balance")
         if callable(setter) and cash is not None:
