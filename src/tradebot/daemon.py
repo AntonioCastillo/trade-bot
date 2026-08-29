@@ -87,20 +87,64 @@ def _maybe_start_sniper(config: Config, notifier: Notifier) -> threading.Thread 
     return thread
 
 
-def _notify_alive(engine: Engine, config: Config) -> None:
-    """Señal de vida periódica a Telegram: confirma que el bot sigue en marcha."""
+def render_daily_report_telegram(engine: Engine, config: Config) -> str:
+    """Genera un informe diario claro y estructurado para Telegram."""
     s = engine.storage.summary()
+    quote = config.risk.quote_currency
     try:
-        eq = f"{engine.equity():.2f} {config.risk.quote_currency}"
+        equity = engine.equity()
+        eq_str = f"{equity:.2f} {quote}"
     except Exception:
-        eq = "n/d"
-    engine.notifier.notify(
-        f"💓 <b>Bot activo</b>\n"
-        f"Equity: {eq}\n"
-        f"Operaciones: {s['trades']} | P&L {s['pnl_abs']:+.2f} {config.risk.quote_currency}\n"
-        f"Estado: {'OPERANDO' if not engine.risk.halted else 'DETENIDO (límite diario)'}\n"
-        f"<b>Cabezas activas:</b>\n{_heads_summary(config)}"
-    )
+        equity = 0.0
+        eq_str = "n/d"
+
+    start_bal = getattr(config.risk, "starting_balance", 0.0) or 0.0
+    total_ret = ((equity - start_bal) / start_bal * 100) if start_bal > 0 else 0.0
+
+    lines = [
+        f"📊 <b>ESTADO DE LA HIDRA</b>",
+        f"━━━━━━━━━━━━━━━━━━━",
+        f"💰 <b>Patrimonio Total:</b> {eq_str} (<i>{total_ret:+.2f}%</i>)",
+        f"📈 <b>P&L Realizado:</b> {s['pnl_abs']:+.2f} {quote} (Win Rate: {s['win_rate']*100:.1f}%)",
+        f"🔢 <b>Operaciones cerradas:</b> {s['trades']}",
+        f"🛡️ <b>Estado:</b> {'🟢 OPERANDO' if not engine.risk.halted else '🔴 DETENIDO (' + engine.risk.halted_reason + ')'}",
+        "",
+    ]
+
+    # Posiciones abiertas desglosadas
+    if engine.positions:
+        lines.append("🔓 <b>POSICIONES ABIERTAS:</b>")
+        for p in engine.positions:
+            curr_p = engine.last_prices.get(p.symbol, p.entry_price)
+            direction = 1 if p.side.value == "buy" else -1
+            pnl_abs = (curr_p - p.entry_price) * p.amount * direction
+            pnl_pct = (pnl_abs / (p.entry_price * p.amount) * 100) if (p.entry_price * p.amount) else 0.0
+            tp_info = f"SL: {p.stop_loss:.4f} | TP: {p.take_profit:.4f}"
+            if p.partial_tp_done:
+                tp_info += " [TP1 COBRADO 50%]"
+            lines.append(
+                f"• <b>{p.symbol}</b> ({p.side.value.upper()})\n"
+                f"  Entrada: {p.entry_price:.4f} → Actual: {curr_p:.4f}\n"
+                f"  P&L: <b>{pnl_abs:+.2f} {quote} ({pnl_pct:+.2f}%)</b>\n"
+                f"  <i>{tp_info}</i>"
+            )
+        lines.append("")
+    else:
+        lines.append("💤 <b>Posiciones abiertas:</b> 0 (100% USDT Líquido)\n")
+
+    lines.append("🐲 <b>Cabezas Activas:</b>")
+    lines.append(_heads_summary(config))
+
+    return "\n".join(lines)
+
+
+def _notify_alive(engine: Engine, config: Config) -> None:
+    """Señal de vida periódica a Telegram con informe completo de estado."""
+    try:
+        report_text = render_daily_report_telegram(engine, config)
+        engine.notifier.notify(report_text)
+    except Exception:
+        logger.exception("Fallo al enviar el informe de estado a Telegram")
 
 
 def _maybe_start_carry(config: Config, notifier: Notifier) -> threading.Thread | None:
@@ -352,11 +396,16 @@ def run_forever(
             try:
                 now = datetime.now(timezone.utc)
 
-                # Nuevo día UTC: reinicia el límite de pérdida diaria y sigue.
+                # Nuevo día UTC: reinicia el límite de pérdida diaria y envía el informe oficial.
                 if now.date() != current_day:
                     current_day = now.date()
                     engine.risk.reset_day(engine.equity())
                     logger.info("Nuevo día UTC (%s): cortafuegos diario reiniciado", current_day)
+                    try:
+                        report_txt = render_daily_report_telegram(engine, config)
+                        engine.notifier.notify(f"🌅 <b>INFORME DIARIO DE MEDIANOCHE (00:00 UTC)</b>\n\n{report_txt}")
+                    except Exception:
+                        logger.exception("Fallo enviando el informe diario de medianoche")
 
                 # Un ciclo sobre todo el universo (cada símbolo aislado).
                 for symbol in symbols:
