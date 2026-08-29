@@ -89,7 +89,7 @@ def build_status(engine, config) -> dict[str, Any]:
                 "partial_tp_done": getattr(p, "partial_tp_done", False),
                 "pnl_abs": round(pnl_abs, 2),
                 "pnl_pct": round(pnl_pct, 2),
-                "opened_at": p.opened_at,
+                "opened_at": p.opened_at.isoformat() if hasattr(p.opened_at, "isoformat") else str(p.opened_at),
             })
     except Exception:
         pass
