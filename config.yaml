@@ -67,6 +67,7 @@ universe:
     symbols: [LINK/USDT, LTC/USDT]
     strategy: range_reversion
     timeframe: 4h
+    macro_btc_filter: true
     params:
       adx_period: 14
       adx_max: 25.0
@@ -87,6 +88,7 @@ universe:
     symbols: [NEAR/USDT]
     strategy: grid
     timeframe: 4h
+    macro_btc_filter: true
     params:
       range_period: 100
       levels: 10
@@ -104,6 +106,7 @@ universe:
     symbols: [XRP/USDT, DOGE/USDT]
     strategy: capitulation
     timeframe: 4h
+    macro_btc_filter: true
     params:
       rsi_period: 14
       rsi_oversold: 20.0
@@ -125,6 +128,7 @@ risk:
   take_profit_pct: 0.03
   max_daily_loss_pct: 0.20      # cortafuegos diario
   max_account_drawdown_pct: 0.15 # disyuntor global de cuenta (cierre de emergencia al 15%)
+  max_total_exposure_pct: 0.80   # reserva mínima del 20% en USDT líquido
 
 engine:
   poll_interval_seconds: 60     # ciclo cada 60s

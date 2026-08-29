@@ -157,6 +157,19 @@ class RiskManager:
                 None, f"ya hay {same_symbol} posición(es) en {signal.symbol}"
             )
 
+        # Filtro de exposición total: reservar un % de la cuenta en USDT líquido.
+        if self.config.max_total_exposure_pct < 1.0 and balance > 0:
+            current_exposure = sum(
+                p.entry_price * p.amount for p in open_positions
+            )
+            new_notional = balance * instrument.position_size_pct
+            if (current_exposure + new_notional) / balance > self.config.max_total_exposure_pct:
+                return RiskDecision(
+                    None,
+                    f"exposición total superaría {self.config.max_total_exposure_pct:.0%} "
+                    f"({current_exposure + new_notional:.2f} / {balance:.2f})"
+                )
+
         capital = balance * instrument.position_size_pct
         if capital <= 0 or signal.price <= 0:
             return RiskDecision(None, "capital o precio no válidos")

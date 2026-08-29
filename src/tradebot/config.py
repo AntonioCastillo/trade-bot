@@ -21,6 +21,7 @@ class RiskConfig:
     take_profit_pct: float = 0.06
     max_daily_loss_pct: float = 0.10
     max_account_drawdown_pct: float = 0.15
+    max_total_exposure_pct: float = 1.0  # 1.0 = sin límite; 0.80 = reserva 20% USDT
 
 
 @dataclass
