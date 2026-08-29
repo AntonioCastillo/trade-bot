@@ -51,6 +51,31 @@ def test_load_merged_merges_sniper(tmp_path):
     assert merged["sniper"]["open"] == 3
 
 
+def test_load_unified_combines_instances(tmp_path):
+    # Dos instancias (spot y futuros) escriben sus ficheros por slot; load_unified
+    # los junta en uno solo bajo `instances`, cada uno con su sniper/xsmom.
+    (tmp_path / "status_spot.json").write_text(json.dumps({"mode": "paper", "equity": 1000.0}))
+    (tmp_path / "status_futuros.json").write_text(json.dumps({"mode": "paper", "equity": 483.9}))
+    (tmp_path / "sniper_status_spot.json").write_text(json.dumps({"open": 3}))
+    (tmp_path / "xsmom_status_futuros.json").write_text(json.dumps({"state": "cash"}))
+
+    unified = status.load_unified(str(tmp_path))
+    assert set(unified["instances"]) == {"spot", "futuros"}
+    assert unified["instances"]["spot"]["equity"] == 1000.0
+    assert unified["instances"]["spot"]["sniper"]["open"] == 3
+    assert unified["instances"]["futuros"]["xsmom"]["state"] == "cash"
+    # No debe mezclar el sniper de spot en futuros ni al revés.
+    assert "sniper" not in unified["instances"]["futuros"]
+
+
+def test_status_slot_and_paths():
+    from types import SimpleNamespace
+    assert status.status_slot(SimpleNamespace(exchange="kucoin")) == "spot"
+    assert status.status_slot(SimpleNamespace(exchange="kucoinfutures")) == "futuros"
+    assert status.status_path("spot").replace("\\", "/") == "data/status_spot.json"
+    assert status.xsmom_path("futuros").replace("\\", "/") == "data/xsmom_status_futuros.json"
+
+
 def test_merge_sniper_optional(tmp_path):
     sp = tmp_path / "sniper.json"
     sp.write_text(json.dumps({"open": 2}))

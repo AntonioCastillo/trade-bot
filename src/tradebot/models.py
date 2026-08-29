@@ -73,6 +73,9 @@ class Position:
     trailing_stop_pct: float = 0.0   # 0 = desactivado
     peak_price: float = 0.0          # mejor precio alcanzado (para el trailing)
     bars_held: int = 0               # nº de velas que lleva abierta (salida por tiempo)
+    partial_tp_pct: float = 0.0      # 0 = desactivado (p.ej. 0.05 para +5%)
+    partial_tp_ratio: float = 0.5    # porcentaje de posición a cerrar en TP parcial (0.5 = 50%)
+    partial_tp_done: bool = False    # True si ya se ha ejecutado el TP parcial
     opened_at: datetime = field(default_factory=_utcnow)
     db_id: int = 0                   # id de su fila en open_positions (0 = no persistida)
 

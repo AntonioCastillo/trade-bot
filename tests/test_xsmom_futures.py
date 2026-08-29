@@ -6,6 +6,63 @@ from tradebot.config import Config, XSMomConfig, RiskConfig
 from tradebot.xsmom import LiveXSMomFuturesExecutor
 
 
+def _futures_cfg():
+    config = MagicMock(spec=Config)
+    config.mode = "live"
+    config.risk = RiskConfig(quote_currency="USDT")
+    config.xsmom = XSMomConfig(
+        enabled=True, universe=["BTC/USDT"], fee_pct=0.001,
+        leverage=2.0, max_notional_usdt=100.0, liquidation_buffer_pct=0.15,
+    )
+    return config
+
+
+def test_guard_liquidations_closes_and_notifies_when_near():
+    config = _futures_cfg()
+    exchange = MagicMock()
+    exchange._normalize_symbol = MagicMock(return_value="BTC/USDT:USDT")
+    # Mark 1000, liquidación 950 -> dist 5% < buffer 15% -> cierre de emergencia.
+    exchange._client.fetch_position = MagicMock(return_value={
+        "contracts": 100.0, "markPrice": 1000.0, "liquidationPrice": 950.0, "side": "long",
+    })
+    notifier = MagicMock()
+
+    executor = LiveXSMomFuturesExecutor(
+        config, exchange, ["BTC/USDT"], dry_run=False, notifier=notifier,
+    )
+    executor.guard_liquidations()
+
+    exchange.create_futures_order.assert_called_once_with("BTC/USDT", "sell", 100.0, leverage=2.0)
+    notifier.notify.assert_called_once()   # #5: la alerta SÍ dispara
+
+
+def test_guard_liquidations_noop_when_far():
+    config = _futures_cfg()
+    exchange = MagicMock()
+    exchange._normalize_symbol = MagicMock(return_value="BTC/USDT:USDT")
+    # Mark 1000, liquidación 500 -> dist 50% > buffer -> no toca nada.
+    exchange._client.fetch_position = MagicMock(return_value={
+        "contracts": 100.0, "markPrice": 1000.0, "liquidationPrice": 500.0, "side": "long",
+    })
+    notifier = MagicMock()
+
+    executor = LiveXSMomFuturesExecutor(
+        config, exchange, ["BTC/USDT"], dry_run=False, notifier=notifier,
+    )
+    executor.guard_liquidations()
+
+    exchange.create_futures_order.assert_not_called()
+    notifier.notify.assert_not_called()
+
+
+def test_guard_liquidations_skips_in_dry_run():
+    config = _futures_cfg()
+    exchange = MagicMock()
+    executor = LiveXSMomFuturesExecutor(config, exchange, ["BTC/USDT"], dry_run=True)
+    executor.guard_liquidations()
+    exchange._client.fetch_position.assert_not_called()
+
+
 def test_xsmom_futures_executor_dry_run():
     config = MagicMock(spec=Config)
     config.mode = "live"

@@ -278,8 +278,12 @@ class Sniper:
                     "| P&L=%+.2f (%+.1f%%) | mejor=%s",
                     s["open"], s["invested"], s["value"], s["pnl"], pct, best)
 
-    def write_status_file(self, path: str = "data/sniper_status.json") -> None:
-        """Vuelca el mark-to-market de los billetes a JSON (para publicar el status)."""
+    def write_status_file(self, path: str | None = None) -> None:
+        """Vuelca el mark-to-market de los billetes a JSON (para publicar el status),
+        en el fichero de ESTA instancia (spot/futuros) para no pisar al otro proceso."""
+        if path is None:
+            from .status import sniper_path, status_slot
+            path = sniper_path(status_slot(self.config))
         s = self.summary()
         data = {
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),

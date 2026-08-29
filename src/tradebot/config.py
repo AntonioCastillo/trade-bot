@@ -110,6 +110,8 @@ class Instrument:
     take_profit_pct: float
     position_size_pct: float
     trailing_stop_pct: float = 0.0
+    partial_take_profit_pct: float = 0.0
+    partial_take_profit_ratio: float = 0.5
     max_concurrent_per_symbol: int = 1   # >1 para grid (varios peldaños a la vez)
     regimes: list[str] = field(default_factory=list)  # regímenes en los que opera; vacío = siempre
     regime_volatile_atr_pct: float | None = None  # umbral ATR% para "volatile" (None=default 2%)
@@ -218,6 +220,8 @@ def _build_instruments(
                         "position_size_pct", risk.position_size_pct
                     ),
                     trailing_stop_pct=overrides.get("trailing_stop_pct", 0.0),
+                    partial_take_profit_pct=overrides.get("partial_take_profit_pct", 0.0),
+                    partial_take_profit_ratio=overrides.get("partial_take_profit_ratio", 0.5),
                     max_concurrent_per_symbol=cat.get("max_concurrent_per_symbol", 1),
                     regimes=list(cat.get("regimes") or []),
                     regime_volatile_atr_pct=cat.get("regime_volatile_atr_pct"),

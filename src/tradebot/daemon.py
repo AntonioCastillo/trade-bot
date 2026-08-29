@@ -135,14 +135,15 @@ def _maybe_start_publisher(config: Config, engine: Engine) -> threading.Thread |
 
     def _loop() -> None:
         from .publisher import publish_to_gist
-        from .status import load_merged
+        from .status import load_unified
         gist_id = _read_gist_id()
         notified = False
         while True:
             try:
-                # Leemos el JSON que escribe el HILO PRINCIPAL (no tocamos la BD
+                # Leemos los JSON que escriben los HILOS PRINCIPALES (no tocamos la BD
                 # desde este hilo: SQLite no permite compartir conexión entre hilos).
-                status = load_merged()
+                # load_unified junta TODAS las instancias (spot + futuros) en un JSON.
+                status = load_unified()
                 res = publish_to_gist(status, token, gist_id)
                 if res["created"]:
                     gist_id = res["id"]

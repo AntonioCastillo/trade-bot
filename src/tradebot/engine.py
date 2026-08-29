@@ -216,11 +216,17 @@ class Engine:
                 self.storage.update_open_position(pos)
                 still_open.append(pos)
                 continue
-            # 2) Salida por TP / SL / trailing (evaluate_exit muta trailing/peak).
+            # 2) Salida por TP / SL / trailing / partial-TP (evaluate_exit muta trailing/peak).
             decision = self.risk.evaluate_exit(pos, current_price)
-            if decision.order is not None and self._close_position(pos, decision.order):
-                continue  # cerrada con éxito -> no se mantiene
-            self.storage.update_open_position(pos)   # persistir trailing/bars_held
+            if decision.order is not None:
+                if decision.order.reason == "partial-take-profit":
+                    if self._execute_partial_close(pos, decision.order):
+                        self.storage.update_open_position(pos)
+                        still_open.append(pos)
+                        continue
+                elif self._close_position(pos, decision.order):
+                    continue  # cerrada con éxito -> no se mantiene
+            self.storage.update_open_position(pos)   # persistir trailing/bars_held/partial_tp
             still_open.append(pos)
         self.positions = still_open
 
@@ -296,6 +302,62 @@ class Engine:
                 logger.error("[ENGINE] No se pudo cerrar la posición %s en el cierre de emergencia", pos.symbol)
                 still_open.append(pos)
         self.positions = still_open
+
+    def _execute_partial_close(self, pos: Position, close_order: Order) -> bool:
+        try:
+            fill = self.execution.execute(close_order)
+        except OrderRejected as e:
+            logger.warning("[%s] no se pudo realizar cierre parcial (%s)", pos.symbol, e)
+            return False
+        self.storage.record_fill(fill)
+
+        closed_amount = fill.filled_amount
+        proportion = closed_amount / pos.amount if pos.amount else 0.5
+        entry_fee_partial = pos.entry_fee * proportion
+        pos.entry_fee -= entry_fee_partial
+
+        direction = 1 if pos.side is Side.BUY else -1
+        gross = (fill.filled_price - pos.entry_price) * closed_amount * direction
+        fee_total = entry_fee_partial + fill.fee
+        pnl_abs = gross - fee_total
+        cost_basis = pos.entry_price * closed_amount
+        pnl_pct = (pnl_abs / cost_basis * 100) if cost_basis else 0.0
+
+        trade = ClosedTrade(
+            symbol=pos.symbol, category=pos.category, strategy_name=pos.strategy_name,
+            side=pos.side, amount=closed_amount, entry_price=pos.entry_price,
+            exit_price=fill.filled_price, fee_total=fee_total, pnl_abs=pnl_abs,
+            pnl_pct=pnl_pct, exit_reason=close_order.reason, opened_at=pos.opened_at,
+        )
+        self.storage.record_closed_trade(trade)
+        self.closed_trades.append(trade)
+
+        # Ajustar la posición abierta existente (reducir cantidad y ajustar a Breakeven)
+        pos.amount -= closed_amount
+        pos.partial_tp_done = True
+        if pos.side is Side.BUY:
+            pos.stop_loss = max(pos.stop_loss, pos.entry_price)
+        else:
+            pos.stop_loss = min(pos.stop_loss, pos.entry_price)
+
+        self._save_cash()
+        head = f"{pos.category}/{pos.strategy_name}"
+        quote = self.config.risk.quote_currency
+        equity = self.equity()
+        logger.info(
+            "[%s] TOMA PARCIAL %s %s @ %.6f | P&L %.2f (%.2f%%) | SL Breakeven %.6f | saldo=%.2f %s",
+            head, pos.symbol, pos.side.value, fill.filled_price, pnl_abs, pnl_pct, pos.stop_loss, equity, quote,
+        )
+        self._log_head(pos.category,
+                       f"TOMA PARCIAL {pos.symbol} @ {fill.filled_price:.6f} | P&L {pnl_abs:+.2f} {quote} ({pnl_pct:+.2f}%) | SL Breakeven {pos.stop_loss:.6f}")
+        self.notifier.notify(
+            f"💰 <b>TOMA PARCIAL (50%)</b> {pos.symbol}\n"
+            f"Cabeza: {head}\n"
+            f"Precio venta: {fill.filled_price:.6f}  |  P&L: {pnl_abs:+.2f} {quote} ({pnl_pct:+.2f}%)\n"
+            f"SL restante ajustado a Breakeven: {pos.stop_loss:.6f}\n"
+            f"Saldo cuenta: {equity:.2f} {quote}"
+        )
+        return True
 
     def _close_position(self, pos: Position, close_order) -> bool:
         try:

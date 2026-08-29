@@ -1,16 +1,111 @@
 # Configuración del bot para Futuros Perpetuos con Cobertura y Cortos.
 
-mode: live           # paper | live
+mode: paper          # paper | live
 exchange: kucoinfutures
 
 timeframe: 4h
 lookback: 300
 
-# Cobertura dinámica de Beta (no aplica a XSMom)
+# Cobertura dinámica de Beta (corto BTC contra la exposición de altcoins)
 hedging:
-  enabled: false
+  enabled: true
+  symbol: BTC/USDT
+  ratio: 0.5
+  min_positions: 2
 
-universe: []
+universe:
+  - name: momentum_diario
+    symbols: [BNB/USDT, ADA/USDT]
+    strategy: momentum
+    timeframe: 1d
+    params:
+      fast_ema: 10
+      slow_ema: 30
+      breakout_lookback: 20
+      breakout_atr_mult: 0.5
+      volume_mult: 1.0
+      bidirectional: true
+      min_bb_width: 0.02
+    risk:
+      stop_loss_pct: 0.08
+      take_profit_pct: 0.30
+      trailing_stop_pct: 0.10
+      position_size_pct: 0.15
+  - name: breakout_diario
+    symbols: [SOL/USDT, AVAX/USDT]
+    strategy: breakout
+    timeframe: 1d
+    params:
+      lookback: 20
+      bidirectional: true
+      min_bb_width: 0.02
+    risk:
+      stop_loss_pct: 0.08
+      take_profit_pct: 0.30
+      trailing_stop_pct: 0.10
+      position_size_pct: 0.15
+  - name: reversion_rango
+    symbols: [LINK/USDT, LTC/USDT]
+    strategy: range_reversion
+    timeframe: 4h
+    params:
+      adx_period: 14
+      adx_max: 25.0
+      rsi_period: 14
+      rsi_oversold: 30.0
+      rsi_overbought: 70.0
+      bb_period: 20
+      bb_std: 2.0
+      bidirectional: true
+    risk:
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.10
+      trailing_stop_pct: 0.03
+      position_size_pct: 0.15
+  - name: capitulacion
+    symbols: [XRP/USDT, DOGE/USDT]
+    strategy: capitulation
+    timeframe: 4h
+    params:
+      rsi_period: 14
+      rsi_oversold: 20.0
+      lookback: 20
+      drop_pct: 0.05
+      volume_mult: 2.0
+    risk:
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.15
+      trailing_stop_pct: 0.03
+      position_size_pct: 0.15
+  - name: scalping_rapido
+    symbols: [ETH/USDT]
+    strategy: rsi_scalper
+    timeframe: 15m
+    params:
+      rsi_period: 7
+      rsi_oversold: 15.0
+      rsi_overbought: 85.0
+      bidirectional: true
+    risk:
+      stop_loss_pct: 0.015
+      take_profit_pct: 0.025
+      trailing_stop_pct: 0.008
+      position_size_pct: 0.10
+  - name: grid_lateral
+    symbols: [NEAR/USDT]
+    strategy: grid
+    timeframe: 4h
+    params:
+      range_period: 100
+      levels: 10
+      adx_period: 14
+      adx_max: 25.0
+      bidirectional: false
+    risk:
+      stop_loss_pct: 0.08
+      take_profit_pct: 0.02
+      position_size_pct: 0.06
+      max_concurrent_per_symbol: 5
 
 risk:
   quote_currency: USDT
@@ -31,10 +126,25 @@ engine:
   error_notify_interval_seconds: 1800
 
 sniper:
-  enabled: false
+  enabled: true
+  poll_interval_seconds: 30
+  position_size_pct: 0.01
+  take_profit_pct: 8.0
+  stop_loss_pct: 0.0
+  timeout_minutes: 0
+  max_concurrent: 50
 
 carry:
-  enabled: false
+  enabled: true
+  symbols: [ETH/USDT, XRP/USDT, DOGE/USDT]
+  notional_pct: 0.20
+  min_annualized_pct: 30.0
+  exit_annualized_pct: 10.0
+  poll_interval_seconds: 300
+  fee_pct: 0.0008
+  leverage: 1.0
+  max_notional_usdt: 50.0
+  liquidation_buffer_pct: 0.15
 
 xsmom:
   enabled: true

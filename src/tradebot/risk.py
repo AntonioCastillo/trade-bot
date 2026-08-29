@@ -201,6 +201,9 @@ class RiskManager:
             reason=reason,
             trailing_stop_pct=instrument.trailing_stop_pct,
             peak_price=entry_price,
+            partial_tp_pct=getattr(instrument, "partial_take_profit_pct", 0.0),
+            partial_tp_ratio=getattr(instrument, "partial_take_profit_ratio", 0.5),
+            partial_tp_done=False,
         )
 
     # --- Salidas -------------------------------------------------------------------
@@ -209,6 +212,23 @@ class RiskManager:
         close_side = Side.SELL if position.side is Side.BUY else Side.BUY
 
         self._update_trailing_stop(position, current_price)
+
+        # 1) Comprobar Toma Parcial de Beneficios (Partial TP)
+        if not position.partial_tp_done and position.partial_tp_pct > 0:
+            if position.side is Side.BUY:
+                hit_partial = current_price >= position.entry_price * (1 + position.partial_tp_pct)
+            else:
+                hit_partial = current_price <= position.entry_price * (1 - position.partial_tp_pct)
+            if hit_partial:
+                partial_amount = position.amount * position.partial_tp_ratio
+                order = Order(
+                    symbol=position.symbol,
+                    side=close_side,
+                    amount=partial_amount,
+                    price=current_price,
+                    reason="partial-take-profit",
+                )
+                return RiskDecision(order, "toma parcial de beneficios")
 
         if position.side is Side.BUY:
             hit_stop = current_price <= position.stop_loss

@@ -200,11 +200,13 @@ class LiveXSMomFuturesExecutor:
 
     MIN_TRADE_USDT = 5.0   # ignora deltas menores en futuros
 
-    def __init__(self, config: Config, exchange: Exchange, universe: list[str], dry_run: bool = True):
+    def __init__(self, config: Config, exchange: Exchange, universe: list[str],
+                 dry_run: bool = True, notifier: Notifier | None = None):
         self.config = config
         self.exchange = exchange
         self.universe = universe
         self.dry_run = dry_run
+        self.notifier = notifier or NullNotifier()
         self.quote = config.risk.quote_currency
         self.fee_pct = config.xsmom.fee_pct
         self.leverage = getattr(config.xsmom, "leverage", 1.0)
@@ -244,30 +246,38 @@ class LiveXSMomFuturesExecutor:
                 out[sym] = round(size * price, 2)
         return out
 
-    def rebalance(self, targets: list[str], prices: dict[str, float]) -> float:
-        # 0) GUARDA DE LIQUIDACIÓN (Cierre de emergencia):
-        if not self.dry_run:
-            buffer = getattr(self.config.xsmom, "liquidation_buffer_pct", 0.15)
-            for sym in self.universe:
-                try:
-                    symbol_ccxt = self.exchange._normalize_symbol(sym)
-                    p = self.exchange._client.fetch_position(symbol_ccxt)
-                    if p and float(p.get("contracts", 0.0) or 0.0) > 0:
-                        liq_price = float(p.get("liquidationPrice") or 0.0)
-                        mark_price = float(p.get("markPrice") or 0.0)
-                        if liq_price > 0 and mark_price > 0:
-                            # Posición LARGA: liquida al BAJAR
-                            dist = (mark_price - liq_price) / mark_price
-                            if dist <= buffer:
-                                logger.warning("[XSMOM-FUTURES] %s a %.1f%% de liquidación (<%.0f%%): CIERRE DE EMERGENCIA",
-                                               sym, dist * 100, buffer * 100)
-                                amount_contracts = float(p.get("contracts", 0.0))
-                                self.exchange.create_futures_order(sym, "sell", amount_contracts, leverage=self.leverage)
-                                if hasattr(self.config, "notifier") and self.config.notifier:
-                                    self.config.notifier.notify(f"🛑 <b>XSMOM FUTUROS</b> {sym} cerca de liquidación ({dist*100:.1f}%): cierre de emergencia.")
-                except Exception as e:
-                    logger.warning("[XSMOM-FUTURES] error al verificar liquidación de %s: %s", sym, e)
+    def guard_liquidations(self) -> None:
+        """Cierre de emergencia si una posición larga se acerca a su precio de
+        liquidación (a menos de `liquidation_buffer_pct`). Pensado para correr en
+        CADA poll, no solo al rebalancear: la liquidación no espera al rebalanceo."""
+        if self.dry_run:
+            return
+        buffer = getattr(self.config.xsmom, "liquidation_buffer_pct", 0.15)
+        for sym in self.universe:
+            try:
+                symbol_ccxt = self.exchange._normalize_symbol(sym)
+                p = self.exchange._client.fetch_position(symbol_ccxt)
+                if not p or float(p.get("contracts", 0.0) or 0.0) <= 0:
+                    continue
+                liq_price = float(p.get("liquidationPrice") or 0.0)
+                mark_price = float(p.get("markPrice") or 0.0)
+                if liq_price <= 0 or mark_price <= 0:
+                    continue
+                # Posición LARGA: liquida al BAJAR el precio.
+                dist = (mark_price - liq_price) / mark_price
+                if dist <= buffer:
+                    amount_contracts = float(p.get("contracts", 0.0))
+                    logger.warning("[XSMOM-FUTURES] %s a %.1f%% de liquidación (<%.0f%%): CIERRE DE EMERGENCIA",
+                                   sym, dist * 100, buffer * 100)
+                    self.exchange.create_futures_order(sym, "sell", amount_contracts, leverage=self.leverage)
+                    self.notifier.notify(
+                        f"🛑 <b>XSMOM FUTUROS</b> {sym} a {dist * 100:.1f}% de liquidación: cierre de emergencia.")
+            except Exception as e:
+                logger.warning("[XSMOM-FUTURES] error al verificar liquidación de %s: %s", sym, e)
 
+    def rebalance(self, targets: list[str], prices: dict[str, float]) -> float:
+        # La guarda de liquidación corre en cada poll desde el runner (no aquí):
+        # así vigila entre rebalanceos, no solo una vez por semana.
         total_equity = self.equity(prices)
         if total_equity <= 0:
             logger.warning("[XSMOM-FUTURES] equity <= 0, aborto rebalanceo")
@@ -357,7 +367,8 @@ class XSMomRunner:
             self.notifier.notify(
                 f"⚙️ <b>XS-Momentum FUTUROS</b> en 🔴 REAL (cesta {len(self.universe)}, top-{self.cfg.top_k}, leverage {self.cfg.leverage}x)"
             )
-            return LiveXSMomFuturesExecutor(self.config, self.exchange, self.universe, dry_run=False)
+            return LiveXSMomFuturesExecutor(self.config, self.exchange, self.universe,
+                                            dry_run=False, notifier=self.notifier)
         else:
             logger.warning("[XSMOM] ejecutor REAL de SPOT activo.")
             self.notifier.notify(
@@ -405,7 +416,8 @@ class XSMomRunner:
             "mode": self.config.mode,
             "lookback_days": self.cfg.lookback_days, "top_k": self.cfg.top_k,
         }
-        p = Path(STATUS_PATH)
+        from .status import status_slot, xsmom_path
+        p = Path(xsmom_path(status_slot(self.config)))
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
@@ -418,8 +430,13 @@ class XSMomRunner:
         logger.info("[XSMOM] runner iniciado (PAPER) | cesta %d | lookback %dd | top-%d | "
                     "rebalanceo cada %dd", len(self.universe), self.cfg.lookback_days,
                     self.cfg.top_k, self.cfg.rebalance_days)
+        guard = getattr(self.pf, "guard_liquidations", None)
         while True:
             try:
+                # Guarda de liquidación en CADA poll (solo el ejecutor de futuros la
+                # tiene): vigila entre rebalanceos, no solo al rebalancear.
+                if callable(guard):
+                    guard()
                 if self._due():
                     self.cycle()
             except Exception:

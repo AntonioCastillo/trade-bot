@@ -58,6 +58,9 @@ CREATE TABLE IF NOT EXISTS open_positions (
     trailing_stop_pct REAL NOT NULL,
     peak_price        REAL NOT NULL,
     bars_held         INTEGER NOT NULL,
+    partial_tp_pct    REAL DEFAULT 0.0,
+    partial_tp_ratio  REAL DEFAULT 0.5,
+    partial_tp_done   INTEGER DEFAULT 0,
     opened_at         TEXT NOT NULL
 );
 
@@ -76,6 +79,15 @@ class Storage:
         self._conn = sqlite3.connect(self.db_path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        for col_name, col_type in [
+            ("partial_tp_pct", "REAL DEFAULT 0.0"),
+            ("partial_tp_ratio", "REAL DEFAULT 0.5"),
+            ("partial_tp_done", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                self._conn.execute(f"ALTER TABLE open_positions ADD COLUMN {col_name} {col_type}")
+            except Exception:
+                pass
         self._conn.commit()
 
     # --- Escritura -----------------------------------------------------------------
@@ -114,12 +126,14 @@ class Storage:
         cur = self._conn.execute(
             "INSERT INTO open_positions (symbol, side, amount, entry_price, stop_loss,"
             " take_profit, category, strategy, entry_fee, reason, trailing_stop_pct,"
-            " peak_price, bars_held, opened_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " peak_price, bars_held, partial_tp_pct, partial_tp_ratio, partial_tp_done, opened_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 pos.symbol, pos.side.value, pos.amount, pos.entry_price, pos.stop_loss,
                 pos.take_profit, pos.category, pos.strategy_name, pos.entry_fee, pos.reason,
-                pos.trailing_stop_pct, pos.peak_price, pos.bars_held, pos.opened_at.isoformat(),
+                pos.trailing_stop_pct, pos.peak_price, pos.bars_held,
+                pos.partial_tp_pct, pos.partial_tp_ratio, int(pos.partial_tp_done),
+                pos.opened_at.isoformat(),
             ),
         )
         self._conn.commit()
@@ -127,13 +141,14 @@ class Storage:
         return pos.db_id
 
     def update_open_position(self, pos: Position) -> None:
-        """Persiste los campos que mutan mientras vive (trailing, velas aguantadas y
-        el importe, que puede ajustarse en la reconciliación con el saldo real)."""
+        """Persiste los campos que mutan mientras vive (trailing, velas aguantadas, TP parcial y
+        el importe, que puede ajustarse en la reconciliación o tras salida parcial)."""
         if not pos.db_id:
             return
         self._conn.execute(
-            "UPDATE open_positions SET stop_loss=?, peak_price=?, bars_held=?, amount=? WHERE id=?",
-            (pos.stop_loss, pos.peak_price, pos.bars_held, pos.amount, pos.db_id),
+            "UPDATE open_positions SET stop_loss=?, peak_price=?, bars_held=?, amount=?,"
+            " partial_tp_done=? WHERE id=?",
+            (pos.stop_loss, pos.peak_price, pos.bars_held, pos.amount, int(pos.partial_tp_done), pos.db_id),
         )
         self._conn.commit()
 
@@ -150,13 +165,18 @@ class Storage:
         rows = self._conn.execute("SELECT * FROM open_positions ORDER BY id").fetchall()
         out: list[Position] = []
         for r in rows:
+            keys = r.keys()
             pos = Position(
                 symbol=r["symbol"], side=Side(r["side"]), amount=r["amount"],
                 entry_price=r["entry_price"], stop_loss=r["stop_loss"],
                 take_profit=r["take_profit"], category=r["category"],
                 strategy_name=r["strategy"], entry_fee=r["entry_fee"], reason=r["reason"] or "",
                 trailing_stop_pct=r["trailing_stop_pct"], peak_price=r["peak_price"],
-                bars_held=int(r["bars_held"]), opened_at=datetime.fromisoformat(r["opened_at"]),
+                bars_held=int(r["bars_held"]),
+                partial_tp_pct=float(r["partial_tp_pct"]) if "partial_tp_pct" in keys and r["partial_tp_pct"] is not None else 0.0,
+                partial_tp_ratio=float(r["partial_tp_ratio"]) if "partial_tp_ratio" in keys and r["partial_tp_ratio"] is not None else 0.5,
+                partial_tp_done=bool(r["partial_tp_done"]) if "partial_tp_done" in keys and r["partial_tp_done"] is not None else False,
+                opened_at=datetime.fromisoformat(r["opened_at"]),
                 db_id=int(r["id"]),
             )
             out.append(pos)
