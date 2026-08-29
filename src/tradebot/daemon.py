@@ -220,31 +220,32 @@ def _maybe_start_publisher(config: Config, engine: Engine) -> threading.Thread |
 
     def _loop() -> None:
         from .publisher import publish_to_gist
-        from .status import load_unified
+        from .status import load_unified, write_status
         gist_id = _read_gist_id()
         notified = False
         while True:
             try:
-                # Leemos los JSON que escriben los HILOS PRINCIPALES (no tocamos la BD
-                # desde este hilo: SQLite no permite compartir conexión entre hilos).
-                # load_unified junta TODAS las instancias (spot + futuros) en un JSON.
+                # Asegurar que se escriba el status de esta instancia antes de publicar
+                try:
+                    write_status(engine, config)
+                except Exception:
+                    pass
                 status = load_unified()
-                res = publish_to_gist(status, token, gist_id)
-                if res["created"]:
-                    gist_id = res["id"]
-                    try:
-                        Path(GIST_ID_FILE).parent.mkdir(parents=True, exist_ok=True)
-                        Path(GIST_ID_FILE).write_text(gist_id, encoding="utf-8")
-                    except Exception:
-                        logger.warning("No pude guardar %s", GIST_ID_FILE)
-                if not notified:
-                    engine.notifier.notify(
-                        f"📡 <b>Status publicándose</b> (cada {PUBLISH_INTERVAL_SECONDS // 60} min)\n"
-                        f"URL: {res['raw_url']}")
-                    logger.info("Status publicado en: %s", res["raw_url"])
-                    notified = True
-            except FileNotFoundError:
-                logger.info("Aún no hay data/status.json; publicaré cuando exista")
+                if status.get("instances"):
+                    res = publish_to_gist(status, token, gist_id)
+                    if res.get("created"):
+                        gist_id = res["id"]
+                        try:
+                            Path(GIST_ID_FILE).parent.mkdir(parents=True, exist_ok=True)
+                            Path(GIST_ID_FILE).write_text(gist_id, encoding="utf-8")
+                        except Exception:
+                            logger.warning("No pude guardar %s", GIST_ID_FILE)
+                    if not notified and "raw_url" in res:
+                        engine.notifier.notify(
+                            f"📡 <b>Status publicándose</b> (cada {PUBLISH_INTERVAL_SECONDS // 60} min)\n"
+                            f"URL: {res['raw_url']}")
+                        logger.info("Status publicado en: %s", res["raw_url"])
+                        notified = True
             except Exception:
                 logger.exception("Fallo publicando el status; reintento en el próximo ciclo")
             time.sleep(PUBLISH_INTERVAL_SECONDS)
