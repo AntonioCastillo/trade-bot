@@ -138,6 +138,47 @@ def render_daily_report_telegram(engine: Engine, config: Config) -> str:
     return "\n".join(lines)
 
 
+def _maybe_evaluate_rs(engine: Engine, config: Config) -> None:
+    """Evalúa la Fuerza Relativa (RS vs BTC) para las cabezas que tengan dynamic_rs_enabled=True."""
+    from collections import OrderedDict
+    from .relative_strength import compute_rs_rankings, select_top_symbols
+
+    categories: "OrderedDict[str, Any]" = OrderedDict()
+    for ins in config.instruments:
+        if getattr(ins, "dynamic_rs_enabled", False):
+            categories.setdefault(ins.category, ins)
+
+    if not categories:
+        return
+
+    for cat_name, ins in categories.items():
+        try:
+            pool = ins.rs_pool or None
+            rankings = compute_rs_rankings(
+                engine.exchange, pool=pool, benchmark_symbol="BTC/USDT",
+                lookback_days=ins.rs_lookback_days, timeframe="1d"
+            )
+            if not rankings:
+                continue
+            curr_syms = [i.symbol for i in config.instruments if i.category == cat_name]
+            new_syms = select_top_symbols(
+                curr_syms, rankings, top_k=ins.rs_top_k, hysteresis_pct=ins.rs_hysteresis_pct
+            )
+            if set(new_syms) != set(curr_syms):
+                logger.info(
+                    "[RS-ROTACION] [%s] Nuevos símbolos seleccionados: %s (antes: %s)",
+                    cat_name, new_syms, curr_syms
+                )
+                engine.update_head_symbols(cat_name, new_syms)
+                engine.notifier.notify(
+                    f"🔄 <b>ROTACIÓN RS EN VIVO</b> ({cat_name})\n"
+                    f"Nuevos símbolos activos: {', '.join(new_syms)}\n"
+                    f"Símbolos anteriores: {', '.join(curr_syms)}"
+                )
+        except Exception:
+            logger.exception("[RS-ROTACION] Fallo al evaluar RS para la cabeza %s", cat_name)
+
+
 def _notify_alive(engine: Engine, config: Config) -> None:
     """Señal de vida periódica a Telegram con informe completo de estado."""
     try:
@@ -401,6 +442,11 @@ def run_forever(
                     current_day = now.date()
                     engine.risk.reset_day(engine.equity())
                     logger.info("Nuevo día UTC (%s): cortafuegos diario reiniciado", current_day)
+                    try:
+                        _maybe_evaluate_rs(engine, config)
+                        symbols = _validate_symbols(engine, config.symbols())
+                    except Exception:
+                        logger.exception("Fallo al evaluar RS en cambio de día UTC")
                     try:
                         report_txt = render_daily_report_telegram(engine, config)
                         engine.notifier.notify(f"🌅 <b>INFORME DIARIO DE MEDIANOCHE (00:00 UTC)</b>\n\n{report_txt}")

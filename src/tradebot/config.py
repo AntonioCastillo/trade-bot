@@ -116,6 +116,11 @@ class Instrument:
     regimes: list[str] = field(default_factory=list)  # regímenes en los que opera; vacío = siempre
     regime_volatile_atr_pct: float | None = None  # umbral ATR% para "volatile" (None=default 2%)
     timeframe: str = "1h"                # marco de vela de ESTA cabeza
+    dynamic_rs_enabled: bool = False
+    rs_pool: list[str] = field(default_factory=list)
+    rs_top_k: int = 2
+    rs_lookback_days: int = 14
+    rs_hysteresis_pct: float = 5.0
 
 
 @dataclass
@@ -202,6 +207,7 @@ def _build_instruments(
         strategy_name = cat.get("strategy", "mean_reversion")
         params = cat.get("params") or {}
         overrides = cat.get("risk") or {}
+        rs_cfg = cat.get("rs_selection") or {}
         for symbol in cat.get("symbols") or []:
             if symbol in seen:
                 raise ValueError(f"Símbolo duplicado en el universo: {symbol}")
@@ -226,6 +232,11 @@ def _build_instruments(
                     regimes=list(cat.get("regimes") or []),
                     regime_volatile_atr_pct=cat.get("regime_volatile_atr_pct"),
                     timeframe=cat.get("timeframe") or default_timeframe,
+                    dynamic_rs_enabled=bool(rs_cfg.get("enabled", False)),
+                    rs_pool=list(rs_cfg.get("pool") or []),
+                    rs_top_k=int(rs_cfg.get("top_k", 2)),
+                    rs_lookback_days=int(rs_cfg.get("lookback_days", 14)),
+                    rs_hysteresis_pct=float(rs_cfg.get("hysteresis_pct", 5.0)),
                 )
             )
     return instruments

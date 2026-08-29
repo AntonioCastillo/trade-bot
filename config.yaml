@@ -23,6 +23,12 @@ universe:
       trailing_stop_pct: 0.10
       partial_take_profit_pct: 0.05
       position_size_pct: 0.20
+    rs_selection:
+      enabled: true
+      top_k: 2
+      lookback_days: 14
+      hysteresis_pct: 5.0
+      pool: [SOL/USDT, AVAX/USDT, BNB/USDT, ADA/USDT, LINK/USDT, LTC/USDT, NEAR/USDT, XRP/USDT, DOGE/USDT, ETH/USDT, DOT/USDT, ATOM/USDT, UNI/USDT, TRX/USDT, SUI/USDT]
 
   # 🟢 Tendencia Confirmada (Momentum sólido con filtro EMA/ATR)
   - name: momentum_diario
@@ -43,6 +49,12 @@ universe:
       trailing_stop_pct: 0.10
       partial_take_profit_pct: 0.05
       position_size_pct: 0.20
+    rs_selection:
+      enabled: true
+      top_k: 2
+      lookback_days: 14
+      hysteresis_pct: 5.0
+      pool: [SOL/USDT, AVAX/USDT, BNB/USDT, ADA/USDT, LINK/USDT, LTC/USDT, NEAR/USDT, XRP/USDT, DOGE/USDT, ETH/USDT, DOT/USDT, ATOM/USDT, UNI/USDT, TRX/USDT, SUI/USDT]
 
   # 🟢 Rango Lateral (Reversión a la media en Bollinger con filtro ADX <= 25)
   - name: reversion_rango

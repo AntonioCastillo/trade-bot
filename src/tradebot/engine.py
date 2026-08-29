@@ -230,6 +230,57 @@ class Engine:
             still_open.append(pos)
         self.positions = still_open
 
+    def update_head_symbols(self, category: str, new_symbols: list[str]) -> None:
+        """Actualiza los símbolos de una cabeza (p.ej. tras selección RS), creando
+        estrategias e instrumentos sin cerrar posiciones previas de símbolos antiguos."""
+        from .strategy import build_strategy
+
+        sample_ins = None
+        for ins in self.config.instruments:
+            if ins.category == category:
+                sample_ins = ins
+                break
+        if not sample_ins:
+            return
+
+        old_instruments = [ins for ins in self.config.instruments if ins.category == category]
+        remaining = [ins for ins in self.config.instruments if ins.category != category]
+
+        new_instruments = []
+        for sym in new_symbols:
+            existing = next((ins for ins in old_instruments if ins.symbol == sym), None)
+            if existing:
+                new_instruments.append(existing)
+            else:
+                new_ins = Instrument(
+                    symbol=sym,
+                    category=category,
+                    strategy_name=sample_ins.strategy_name,
+                    strategy_params=dict(sample_ins.strategy_params),
+                    stop_loss_pct=sample_ins.stop_loss_pct,
+                    take_profit_pct=sample_ins.take_profit_pct,
+                    position_size_pct=sample_ins.position_size_pct,
+                    trailing_stop_pct=sample_ins.trailing_stop_pct,
+                    partial_take_profit_pct=sample_ins.partial_take_profit_pct,
+                    partial_take_profit_ratio=sample_ins.partial_take_profit_ratio,
+                    max_concurrent_per_symbol=sample_ins.max_concurrent_per_symbol,
+                    regimes=list(sample_ins.regimes),
+                    regime_volatile_atr_pct=sample_ins.regime_volatile_atr_pct,
+                    timeframe=sample_ins.timeframe,
+                    dynamic_rs_enabled=sample_ins.dynamic_rs_enabled,
+                    rs_pool=list(sample_ins.rs_pool),
+                    rs_top_k=sample_ins.rs_top_k,
+                    rs_lookback_days=sample_ins.rs_lookback_days,
+                    rs_hysteresis_pct=sample_ins.rs_hysteresis_pct,
+                )
+                new_instruments.append(new_ins)
+
+        self.config.instruments = remaining + new_instruments
+
+        for ins in new_instruments:
+            if ins.symbol not in self.strategies:
+                self.strategies[ins.symbol] = build_strategy(ins.strategy_name, ins.strategy_params)
+
     def _check_entry(self, symbol: str, candles: pd.DataFrame, current_price: float) -> None:
         strategy = self.strategies[symbol]
         signal = strategy.generate_signal(symbol, candles)
