@@ -18,6 +18,7 @@ universe:
       bidirectional: false
       min_bb_width: 0.02
     macro_btc_filter: true
+    strong_close_filter: true
     risk:
       stop_loss_pct: 0.08
       take_profit_pct: 0.30
@@ -25,6 +26,7 @@ universe:
       partial_take_profit_pct: 0.05
       use_atr_trailing: true
       atr_trailing_mult: 3.0
+      volatility_sizing: true
       position_size_pct: 0.20
     rs_selection:
       enabled: true
@@ -39,6 +41,7 @@ universe:
     strategy: momentum
     timeframe: 1d
     macro_btc_filter: true
+    strong_close_filter: true
     params:
       fast_ema: 10
       slow_ema: 30
@@ -54,6 +57,7 @@ universe:
       partial_take_profit_pct: 0.05
       use_atr_trailing: true
       atr_trailing_mult: 3.0
+      volatility_sizing: true
       position_size_pct: 0.20
     rs_selection:
       enabled: true

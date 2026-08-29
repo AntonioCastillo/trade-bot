@@ -125,6 +125,14 @@ class Instrument:
     macro_btc_filter: bool = False
     use_atr_trailing: bool = False
     atr_trailing_mult: float = 3.0
+    # Position sizing adaptativo por volatilidad (ATR)
+    volatility_sizing: bool = False
+    volatility_ref_atr_pct: float = 0.03   # ATR% "normal" de referencia (3%)
+    volatility_size_min: float = 0.5       # multiplicador mínimo (50% del tamaño base)
+    volatility_size_max: float = 1.5       # multiplicador máximo (150% del tamaño base)
+    # Filtro de cierre fuerte (anti-mechas de rechazo)
+    strong_close_filter: bool = False
+    strong_close_threshold: float = 0.75   # cierre debe estar en el 25% superior del rango
 
 
 @dataclass
@@ -244,6 +252,12 @@ def _build_instruments(
                     macro_btc_filter=bool(cat.get("macro_btc_filter", False)),
                     use_atr_trailing=bool(overrides.get("use_atr_trailing", cat.get("use_atr_trailing", False))),
                     atr_trailing_mult=float(overrides.get("atr_trailing_mult", cat.get("atr_trailing_mult", 3.0))),
+                    volatility_sizing=bool(overrides.get("volatility_sizing", cat.get("volatility_sizing", False))),
+                    volatility_ref_atr_pct=float(overrides.get("volatility_ref_atr_pct", cat.get("volatility_ref_atr_pct", 0.03))),
+                    volatility_size_min=float(overrides.get("volatility_size_min", cat.get("volatility_size_min", 0.5))),
+                    volatility_size_max=float(overrides.get("volatility_size_max", cat.get("volatility_size_max", 1.5))),
+                    strong_close_filter=bool(overrides.get("strong_close_filter", cat.get("strong_close_filter", False))),
+                    strong_close_threshold=float(overrides.get("strong_close_threshold", cat.get("strong_close_threshold", 0.75))),
                 )
             )
     return instruments

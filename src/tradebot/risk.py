@@ -144,6 +144,7 @@ class RiskManager:
         instrument: Instrument,
         balance: float,
         open_positions: list[Position],
+        current_atr: float = 0.0,
     ) -> RiskDecision:
         if self._halted:
             return RiskDecision(None, f"bot detenido por gestión de riesgo ({self._halted_reason})")
@@ -171,6 +172,20 @@ class RiskManager:
                 )
 
         capital = balance * instrument.position_size_pct
+
+        # Position sizing adaptativo por volatilidad (ATR)
+        if instrument.volatility_sizing and current_atr > 0 and signal.price > 0:
+            atr_pct = current_atr / signal.price
+            if atr_pct > 0:
+                vol_factor = instrument.volatility_ref_atr_pct / atr_pct
+                vol_factor = max(instrument.volatility_size_min,
+                                min(instrument.volatility_size_max, vol_factor))
+                capital *= vol_factor
+                logger.debug(
+                    "Volatility sizing: ATR%%=%.2f%%, ref=%.2f%%, factor=%.2fx, capital=%.2f",
+                    atr_pct * 100, instrument.volatility_ref_atr_pct * 100,
+                    vol_factor, capital,
+                )
         if capital <= 0 or signal.price <= 0:
             return RiskDecision(None, "capital o precio no válidos")
 

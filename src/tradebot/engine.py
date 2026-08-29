@@ -283,6 +283,12 @@ class Engine:
                     macro_btc_filter=sample_ins.macro_btc_filter,
                     use_atr_trailing=sample_ins.use_atr_trailing,
                     atr_trailing_mult=sample_ins.atr_trailing_mult,
+                    volatility_sizing=sample_ins.volatility_sizing,
+                    volatility_ref_atr_pct=sample_ins.volatility_ref_atr_pct,
+                    volatility_size_min=sample_ins.volatility_size_min,
+                    volatility_size_max=sample_ins.volatility_size_max,
+                    strong_close_filter=sample_ins.strong_close_filter,
+                    strong_close_threshold=sample_ins.strong_close_threshold,
                 )
                 new_instruments.append(new_ins)
 
@@ -320,8 +326,37 @@ class Engine:
                 logger.debug("[%s] %s no opera en régimen '%s'", symbol, head, regime)
                 return
 
+        # Filtro de Cierre Fuerte: rechaza entradas en velas con mecha de rechazo.
+        if getattr(instrument, "strong_close_filter", False) and len(candles) >= 1:
+            last = candles.iloc[-1]
+            candle_range = last["high"] - last["low"]
+            if candle_range > 0:
+                threshold = getattr(instrument, "strong_close_threshold", 0.75)
+                close_position_in_range = (last["close"] - last["low"]) / candle_range
+                if signal.type is SignalType.BUY and close_position_in_range < threshold:
+                    logger.info(
+                        "[%s] Entrada BUY rechazada por cierre débil (%.1f%% del rango, mínimo %.0f%%)",
+                        symbol, close_position_in_range * 100, threshold * 100,
+                    )
+                    return
+                if signal.type is SignalType.SELL and close_position_in_range > (1 - threshold):
+                    logger.info(
+                        "[%s] Entrada SELL rechazada por cierre débil (%.1f%% del rango)",
+                        symbol, close_position_in_range * 100,
+                    )
+                    return
+
+        # Calcular ATR para volatility sizing
+        current_atr = 0.0
+        if len(candles) >= 15:
+            try:
+                from .indicators import atr as calc_atr
+                current_atr = float(calc_atr(candles["high"], candles["low"], candles["close"], 14).iloc[-1])
+            except Exception:
+                current_atr = 0.0
+
         balance = self.execution.get_balance()
-        decision = self.risk.evaluate_entry(signal, instrument, balance, self.positions)
+        decision = self.risk.evaluate_entry(signal, instrument, balance, self.positions, current_atr=current_atr)
         if decision.order is None:
             logger.debug("[%s] entrada rechazada: %s", symbol, decision.reason)
             return
