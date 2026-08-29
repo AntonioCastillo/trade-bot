@@ -76,6 +76,8 @@ class Position:
     partial_tp_pct: float = 0.0      # 0 = desactivado (p.ej. 0.05 para +5%)
     partial_tp_ratio: float = 0.5    # porcentaje de posición a cerrar en TP parcial (0.5 = 50%)
     partial_tp_done: bool = False    # True si ya se ha ejecutado el TP parcial
+    use_atr_trailing: bool = False   # True para usar Trailing Stop Chandelier por ATR
+    atr_trailing_mult: float = 3.0   # multiplicador ATR para Trailing Stop (p.ej. 3.0)
     opened_at: datetime = field(default_factory=_utcnow)
     db_id: int = 0                   # id de su fila en open_positions (0 = no persistida)
 

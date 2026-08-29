@@ -17,11 +17,14 @@ universe:
       lookback: 20
       bidirectional: false
       min_bb_width: 0.02
+    macro_btc_filter: true
     risk:
       stop_loss_pct: 0.08
       take_profit_pct: 0.30
       trailing_stop_pct: 0.10
       partial_take_profit_pct: 0.05
+      use_atr_trailing: true
+      atr_trailing_mult: 3.0
       position_size_pct: 0.20
     rs_selection:
       enabled: true
@@ -35,6 +38,7 @@ universe:
     symbols: [BNB/USDT, ADA/USDT]
     strategy: momentum
     timeframe: 1d
+    macro_btc_filter: true
     params:
       fast_ema: 10
       slow_ema: 30
@@ -48,6 +52,8 @@ universe:
       take_profit_pct: 0.30
       trailing_stop_pct: 0.10
       partial_take_profit_pct: 0.05
+      use_atr_trailing: true
+      atr_trailing_mult: 3.0
       position_size_pct: 0.20
     rs_selection:
       enabled: true

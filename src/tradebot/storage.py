@@ -83,6 +83,8 @@ class Storage:
             ("partial_tp_pct", "REAL DEFAULT 0.0"),
             ("partial_tp_ratio", "REAL DEFAULT 0.5"),
             ("partial_tp_done", "INTEGER DEFAULT 0"),
+            ("use_atr_trailing", "INTEGER DEFAULT 0"),
+            ("atr_trailing_mult", "REAL DEFAULT 3.0"),
         ]:
             try:
                 self._conn.execute(f"ALTER TABLE open_positions ADD COLUMN {col_name} {col_type}")
@@ -126,13 +128,15 @@ class Storage:
         cur = self._conn.execute(
             "INSERT INTO open_positions (symbol, side, amount, entry_price, stop_loss,"
             " take_profit, category, strategy, entry_fee, reason, trailing_stop_pct,"
-            " peak_price, bars_held, partial_tp_pct, partial_tp_ratio, partial_tp_done, opened_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " peak_price, bars_held, partial_tp_pct, partial_tp_ratio, partial_tp_done,"
+            " use_atr_trailing, atr_trailing_mult, opened_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 pos.symbol, pos.side.value, pos.amount, pos.entry_price, pos.stop_loss,
                 pos.take_profit, pos.category, pos.strategy_name, pos.entry_fee, pos.reason,
                 pos.trailing_stop_pct, pos.peak_price, pos.bars_held,
                 pos.partial_tp_pct, pos.partial_tp_ratio, int(pos.partial_tp_done),
+                int(pos.use_atr_trailing), pos.atr_trailing_mult,
                 pos.opened_at.isoformat(),
             ),
         )
@@ -176,6 +180,8 @@ class Storage:
                 partial_tp_pct=float(r["partial_tp_pct"]) if "partial_tp_pct" in keys and r["partial_tp_pct"] is not None else 0.0,
                 partial_tp_ratio=float(r["partial_tp_ratio"]) if "partial_tp_ratio" in keys and r["partial_tp_ratio"] is not None else 0.5,
                 partial_tp_done=bool(r["partial_tp_done"]) if "partial_tp_done" in keys and r["partial_tp_done"] is not None else False,
+                use_atr_trailing=bool(r["use_atr_trailing"]) if "use_atr_trailing" in keys and r["use_atr_trailing"] is not None else False,
+                atr_trailing_mult=float(r["atr_trailing_mult"]) if "atr_trailing_mult" in keys and r["atr_trailing_mult"] is not None else 3.0,
                 opened_at=datetime.fromisoformat(r["opened_at"]),
                 db_id=int(r["id"]),
             )

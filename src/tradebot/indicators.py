@@ -77,3 +77,8 @@ def bollinger_bands(
             "upper": middle + num_std * std,
         }
     )
+
+
+def ema(close: pd.Series, period: int = 50) -> pd.Series:
+    """Media móvil exponencial (EMA)."""
+    return close.ewm(span=period, adjust=False).mean()

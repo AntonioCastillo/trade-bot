@@ -121,6 +121,9 @@ class Instrument:
     rs_top_k: int = 2
     rs_lookback_days: int = 14
     rs_hysteresis_pct: float = 5.0
+    macro_btc_filter: bool = False
+    use_atr_trailing: bool = False
+    atr_trailing_mult: float = 3.0
 
 
 @dataclass
@@ -237,6 +240,9 @@ def _build_instruments(
                     rs_top_k=int(rs_cfg.get("top_k", 2)),
                     rs_lookback_days=int(rs_cfg.get("lookback_days", 14)),
                     rs_hysteresis_pct=float(rs_cfg.get("hysteresis_pct", 5.0)),
+                    macro_btc_filter=bool(cat.get("macro_btc_filter", False)),
+                    use_atr_trailing=bool(overrides.get("use_atr_trailing", cat.get("use_atr_trailing", False))),
+                    atr_trailing_mult=float(overrides.get("atr_trailing_mult", cat.get("atr_trailing_mult", 3.0))),
                 )
             )
     return instruments

@@ -48,3 +48,27 @@ def classify_regime(
     if math.isnan(adx_val):
         return UNKNOWN
     return TRENDING if adx_val >= trend_adx else RANGING
+
+
+def is_btc_macro_bullish(
+    exchange: any,
+    symbol: str = "BTC/USDT",
+    ema_period: int = 50,
+    timeframe: str = "1d",
+) -> bool:
+    """Verifica si Bitcoin (BTC/USDT) se encuentra en tendencia macro alcista (Cierre >= EMA50 diaria).
+    
+    Si la consulta falla por red, devuelve True por defecto para no bloquear la operativa.
+    """
+    if exchange is None:
+        return True
+    try:
+        candles = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=ema_period + 30)
+        if candles is None or len(candles) < ema_period:
+            return True
+        close = candles["close"]
+        ema50 = float(indicators.ema(close, ema_period).iloc[-1])
+        last_price = float(close.iloc[-1])
+        return last_price >= ema50
+    except Exception:
+        return True

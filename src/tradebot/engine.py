@@ -60,7 +60,7 @@ class Engine:
         current_price = float(candles["close"].iloc[-1])
         self.last_prices[symbol] = current_price
 
-        self._check_exits(symbol, current_price)
+        self._check_exits(symbol, current_price, candles=candles)
         self._check_entry(symbol, candles, current_price)
 
         if self.enforce_daily_loss:
@@ -200,7 +200,15 @@ class Engine:
             except Exception as e:
                 logger.warning("[HEDGE] No se pudo abrir la cobertura: %s", e)
 
-    def _check_exits(self, symbol: str, current_price: float) -> None:
+    def _check_exits(self, symbol: str, current_price: float, candles: pd.DataFrame | None = None) -> None:
+        current_atr = 0.0
+        if candles is not None and len(candles) >= 15:
+            try:
+                from .indicators import atr
+                current_atr = float(atr(candles["high"], candles["low"], candles["close"], 14).iloc[-1])
+            except Exception:
+                current_atr = 0.0
+
         still_open: list[Position] = []
         for pos in self.positions:
             if pos.symbol != symbol:
@@ -217,7 +225,7 @@ class Engine:
                 still_open.append(pos)
                 continue
             # 2) Salida por TP / SL / trailing / partial-TP (evaluate_exit muta trailing/peak).
-            decision = self.risk.evaluate_exit(pos, current_price)
+            decision = self.risk.evaluate_exit(pos, current_price, current_atr=current_atr)
             if decision.order is not None:
                 if decision.order.reason == "partial-take-profit":
                     if self._execute_partial_close(pos, decision.order):
@@ -272,6 +280,9 @@ class Engine:
                     rs_top_k=sample_ins.rs_top_k,
                     rs_lookback_days=sample_ins.rs_lookback_days,
                     rs_hysteresis_pct=sample_ins.rs_hysteresis_pct,
+                    macro_btc_filter=sample_ins.macro_btc_filter,
+                    use_atr_trailing=sample_ins.use_atr_trailing,
+                    atr_trailing_mult=sample_ins.atr_trailing_mult,
                 )
                 new_instruments.append(new_ins)
 
@@ -289,6 +300,13 @@ class Engine:
 
         instrument = self.config.instrument(symbol)
         head = f"{instrument.category}/{instrument.strategy_name}"
+
+        # Filtro Macro de BTC: congela nuevas compras en altcoins si BTC < EMA50
+        if getattr(instrument, "macro_btc_filter", False):
+            from .regime import is_btc_macro_bullish
+            if not is_btc_macro_bullish(self.exchange):
+                logger.info("[%s] Compras pausadas en %s (Filtro Macro BTC: BTC < EMA50)", head, symbol)
+                return
 
         # Filtro de régimen: la cabeza solo entra si el mercado le favorece.
         if instrument.regimes:

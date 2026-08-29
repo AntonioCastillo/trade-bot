@@ -204,14 +204,16 @@ class RiskManager:
             partial_tp_pct=getattr(instrument, "partial_take_profit_pct", 0.0),
             partial_tp_ratio=getattr(instrument, "partial_take_profit_ratio", 0.5),
             partial_tp_done=False,
+            use_atr_trailing=getattr(instrument, "use_atr_trailing", False),
+            atr_trailing_mult=getattr(instrument, "atr_trailing_mult", 3.0),
         )
 
     # --- Salidas -------------------------------------------------------------------
 
-    def evaluate_exit(self, position: Position, current_price: float) -> RiskDecision:
+    def evaluate_exit(self, position: Position, current_price: float, current_atr: float = 0.0) -> RiskDecision:
         close_side = Side.SELL if position.side is Side.BUY else Side.BUY
 
-        self._update_trailing_stop(position, current_price)
+        self._update_trailing_stop(position, current_price, current_atr=current_atr)
 
         # 1) Comprobar Toma Parcial de Beneficios (Partial TP)
         if not position.partial_tp_done and position.partial_tp_pct > 0:
@@ -239,7 +241,7 @@ class RiskManager:
 
         if hit_stop or hit_take:
             if hit_stop:
-                reason = "trailing-stop" if position.trailing_stop_pct > 0 else "stop-loss"
+                reason = "trailing-stop" if (position.trailing_stop_pct > 0 or position.use_atr_trailing) else "stop-loss"
             else:
                 reason = "take-profit"
             order = Order(
@@ -253,9 +255,21 @@ class RiskManager:
 
         return RiskDecision(None, "posición dentro de rango")
 
-    def _update_trailing_stop(self, position: Position, current_price: float) -> None:
+    def _update_trailing_stop(self, position: Position, current_price: float, current_atr: float = 0.0) -> None:
         """Arrastra el stop siguiendo al mejor precio alcanzado. Solo lo mueve a
         favor: nunca afloja el stop una vez apretado."""
+        if position.use_atr_trailing and current_atr > 0:
+            dist = current_atr * position.atr_trailing_mult
+            if position.side is Side.BUY:
+                position.peak_price = max(position.peak_price, current_price)
+                trail = position.peak_price - dist
+                position.stop_loss = max(position.stop_loss, trail)
+            else:
+                position.peak_price = min(position.peak_price, current_price)
+                trail = position.peak_price + dist
+                position.stop_loss = min(position.stop_loss, trail)
+            return
+
         if position.trailing_stop_pct <= 0:
             return
         pct = position.trailing_stop_pct
