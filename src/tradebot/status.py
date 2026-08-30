@@ -100,7 +100,6 @@ def build_status(engine, config) -> dict[str, Any]:
         "exchange": config.exchange,
         "quote": config.risk.quote_currency,
         "equity": equity,
-        "starting_balance": config.risk.starting_balance,
         "closed_trades": s["trades"],
         "open_positions": open_positions,
         "pnl_abs": round(s["pnl_abs"], 2),
