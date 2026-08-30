@@ -66,6 +66,27 @@ universe:
       hysteresis_pct: 5.0
       pool: [SOL/USDT, AVAX/USDT, BNB/USDT, ADA/USDT, LINK/USDT, LTC/USDT, NEAR/USDT, XRP/USDT, DOGE/USDT, ETH/USDT, DOT/USDT, ATOM/USDT, UNI/USDT, TRX/USDT, SUI/USDT]
 
+  # 🟢 Explosión de Volumen (Detecta entradas de dinero institucional)
+  - name: volumen_explosivo
+    symbols: [ETH/USDT, SOL/USDT]
+    strategy: volume_surge
+    timeframe: 4h
+    macro_btc_filter: true
+    strong_close_filter: true
+    params:
+      vol_period: 20
+      surge_mult: 2.5
+      min_change_pct: 0.01
+    risk:
+      stop_loss_pct: 0.06
+      take_profit_pct: 0.20
+      trailing_stop_pct: 0.08
+      partial_take_profit_pct: 0.05
+      use_atr_trailing: true
+      atr_trailing_mult: 3.0
+      volatility_sizing: true
+      position_size_pct: 0.15
+
   # 🟢 Rango Lateral (Reversión a la media en Bollinger con filtro ADX <= 25)
   - name: reversion_rango
     symbols: [LINK/USDT, LTC/USDT]
