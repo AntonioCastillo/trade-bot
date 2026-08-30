@@ -89,7 +89,7 @@ universe:
 
   # 🟢 Rango Lateral (Reversión a la media en Bollinger con filtro ADX <= 25)
   - name: reversion_rango
-    symbols: [LINK/USDT, LTC/USDT]
+    symbols: [LINK/USDT, LTC/USDT, DOT/USDT, ATOM/USDT]
     strategy: range_reversion
     timeframe: 4h
     macro_btc_filter: true
@@ -110,7 +110,7 @@ universe:
 
   # 🟢 Rejilla de Acumulación (Grid Trading en 4h con filtro ADX)
   - name: grid_lateral
-    symbols: [NEAR/USDT]
+    symbols: [NEAR/USDT, LINK/USDT]
     strategy: grid
     timeframe: 4h
     macro_btc_filter: true
@@ -128,7 +128,7 @@ universe:
 
   # 🟢 Caza de Pánicos (Capitulación / Comprar caídas extremas con RSI < 20)
   - name: capitulacion
-    symbols: [XRP/USDT, DOGE/USDT]
+    symbols: [XRP/USDT, DOGE/USDT, ADA/USDT, AVAX/USDT]
     strategy: capitulation
     timeframe: 4h
     macro_btc_filter: true
