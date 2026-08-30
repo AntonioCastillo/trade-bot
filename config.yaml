@@ -68,7 +68,7 @@ universe:
 
   # 🟢 Explosión de Volumen (Detecta entradas de dinero institucional)
   - name: volumen_explosivo
-    symbols: [ETH/USDT, SOL/USDT]
+    symbols: [ETH/USDT, SUI/USDT]
     strategy: volume_surge
     timeframe: 4h
     macro_btc_filter: true
@@ -89,7 +89,7 @@ universe:
 
   # 🟢 Rango Lateral (Reversión a la media en Bollinger con filtro ADX <= 25)
   - name: reversion_rango
-    symbols: [LINK/USDT, LTC/USDT, DOT/USDT, ATOM/USDT]
+    symbols: [LTC/USDT, DOT/USDT, ATOM/USDT]
     strategy: range_reversion
     timeframe: 4h
     macro_btc_filter: true
@@ -128,7 +128,7 @@ universe:
 
   # 🟢 Caza de Pánicos (Capitulación / Comprar caídas extremas con RSI < 20)
   - name: capitulacion
-    symbols: [XRP/USDT, DOGE/USDT, ADA/USDT, AVAX/USDT]
+    symbols: [XRP/USDT, DOGE/USDT, TRX/USDT, UNI/USDT]
     strategy: capitulation
     timeframe: 4h
     macro_btc_filter: true
