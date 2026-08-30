@@ -14,7 +14,6 @@ PERIODS_PER_YEAR: funding cada 8h -> 3/día.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -26,11 +25,6 @@ from .notifier import Notifier, NullNotifier
 logger = logging.getLogger(__name__)
 
 PERIODS_PER_YEAR = 3 * 365
-
-# Segunda confirmación (aparte de la del spot) para EJECUTAR futuros de verdad.
-# Sin ella, aun con mode=live, el ejecutor corre en DRY-RUN (no envía órdenes).
-CARRY_LIVE_CONFIRM_ENV = "TRADEBOT_CARRY_LIVE_CONFIRM"
-CARRY_LIVE_CONFIRM = "SI FUTUROS REAL"
 
 
 def annualized_pct(rate: float) -> float:
@@ -145,30 +139,19 @@ class CarryRunner:
         self._fut = None
 
     def _build_manager(self):
-        """El MODO manda: en paper todo es paper; en live el carry va REAL como el
-        resto (nunca paper mientras el bot opera en real).
-
-        Única salvaguarda en live: la 1ª vez arranca en DRY-RUN (no envía órdenes,
-        pero usa balances/precios REALES) salvo que la variable de confirmación de
-        futuros esté puesta. Es staging de seguridad para un camino no probado, NO
-        contabilidad simulada."""
+        """El MODO manda: en paper todo es paper; en live el carry va REAL.
+        Sin doble confirmación: si el bot está en live, el carry también."""
         if self.config.mode != "live":
             return CarryManager(self.cfg, self.config.risk.starting_balance)
 
         from .carry_live import LiveCarryExecutor
         from .execution.futures import FuturesBroker
 
-        confirmed = os.environ.get(CARRY_LIVE_CONFIRM_ENV, "").strip() == CARRY_LIVE_CONFIRM
-        dry_run = not confirmed
-        broker = FuturesBroker(self.config, leverage=self.cfg.leverage, dry_run=dry_run)
-        logger.warning("[CARRY] ejecutor REAL de futuros | modo=%s | apalancamiento=%sx | "
-                       "tope=%.0f USDT/pos", "REAL" if confirmed else "DRY-RUN (no envía)",
-                       self.cfg.leverage, self.cfg.max_notional_usdt)
-        if not confirmed:
-            logger.warning("[CARRY] 1ª vez en DRY-RUN (no envía). Para operar de verdad "
-                           "exporta %s=\"%s\"", CARRY_LIVE_CONFIRM_ENV, CARRY_LIVE_CONFIRM)
+        broker = FuturesBroker(self.config, leverage=self.cfg.leverage, dry_run=False)
+        logger.warning("[CARRY] ejecutor REAL de futuros | apalancamiento=%sx | "
+                       "tope=%.0f USDT/pos", self.cfg.leverage, self.cfg.max_notional_usdt)
         self.notifier.notify(
-            f"⚙️ <b>CARRY futuros</b> arrancado en {'🔴 REAL' if confirmed else '🧪 DRY-RUN'} "
+            f"⚙️ <b>CARRY futuros</b> arrancado en 🔴 REAL "
             f"(lev {self.cfg.leverage:g}x, tope {self.cfg.max_notional_usdt:.0f} USDT/pos)")
         return LiveCarryExecutor(self.config, self.exchange, broker, self.notifier)
 

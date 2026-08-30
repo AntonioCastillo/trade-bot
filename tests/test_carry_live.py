@@ -5,7 +5,7 @@ Todo con DOBLES: no toca red ni envía órdenes."""
 
 from conftest import make_config, make_instrument
 
-from tradebot.carry import CARRY_LIVE_CONFIRM, CARRY_LIVE_CONFIRM_ENV, CarryManager, CarryRunner
+from tradebot.carry import CarryManager, CarryRunner
 from tradebot.carry_live import LiveCarryExecutor
 from tradebot.notifier import NullNotifier
 
@@ -118,20 +118,8 @@ def test_runner_uses_paper_in_paper_mode():
     assert isinstance(runner.mgr, CarryManager)
 
 
-def test_runner_live_dryrun_without_confirm(monkeypatch):
-    monkeypatch.delenv(CARRY_LIVE_CONFIRM_ENV, raising=False)
-    cfg = _cfg()
-    cfg.mode = "live"          # live -> el carry va REAL (sin flag extra)
-    cfg.credentials.api_key = "k"
-    cfg.credentials.api_secret = "s"
-    cfg.credentials.api_passphrase = "p"
-    runner = CarryRunner(cfg, exchange=object(), notifier=NullNotifier())
-    assert isinstance(runner.mgr, LiveCarryExecutor)
-    assert runner.mgr.dry_run is True       # 1ª vez sin confirmación -> dry-run (no paper)
-
-
-def test_runner_live_real_with_confirm(monkeypatch):
-    monkeypatch.setenv(CARRY_LIVE_CONFIRM_ENV, CARRY_LIVE_CONFIRM)
+def test_runner_live_goes_real_directly():
+    """En mode=live el carry va REAL sin doble confirmación."""
     cfg = _cfg()
     cfg.mode = "live"
     cfg.credentials.api_key = "k"
@@ -139,7 +127,7 @@ def test_runner_live_real_with_confirm(monkeypatch):
     cfg.credentials.api_passphrase = "p"
     runner = CarryRunner(cfg, exchange=object(), notifier=NullNotifier())
     assert isinstance(runner.mgr, LiveCarryExecutor)
-    assert runner.mgr.dry_run is False      # confirmado -> ejecuta de verdad
+    assert runner.mgr.dry_run is False      # live → real, sin más
 
 
 def test_monitor_emergency_close_near_liquidation():
