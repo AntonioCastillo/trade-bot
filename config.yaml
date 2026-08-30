@@ -167,7 +167,16 @@ sniper:
   enabled: false
 
 carry:
-  enabled: false
+  enabled: true
+  symbols: [ETH/USDT, SOL/USDT]              # las 2 con más volumen de futuros en KuCoin
+  notional_pct: 0.15                          # 15% del balance por posición (por pata)
+  min_annualized_pct: 5.0                     # abrir solo si funding anualizado > 5%
+  exit_annualized_pct: 0.0                    # cerrar si funding cae a negativo
+  poll_interval_seconds: 300                  # chequear cada 5 min
+  fee_pct: 0.0008                             # comisión aprox. por pata
+  leverage: 1.0                               # 1x = riesgo mínimo de liquidación
+  max_notional_usdt: 50.0                     # tope DURO: máx $50 USDT por posición
+  liquidation_buffer_pct: 0.15                # cierre de emergencia si queda a <15% de la liquidación
 
 xsmom:
   enabled: false                # APAGADO: la Hidra multicabeza de arriba controla la cuenta
