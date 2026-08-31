@@ -61,6 +61,42 @@ class LiveCarryExecutor:
         self.notifier = notifier or NullNotifier()
         self.dry_run = broker.dry_run
         self.positions: dict[str, LiveCarryPosition] = {}
+        try:
+            self.readopt_positions()
+        except Exception:
+            logger.exception("[CARRY-LIVE] No pude readoptar posiciones existentes al arrancar")
+
+    def readopt_positions(self) -> None:
+        """Sincroniza y readopta posiciones abiertas en KuCoin Futuros al arrancar o reiniciar."""
+        if self.dry_run:
+            return
+        symbols = self.cfg.symbols or ["ETH/USDT", "SOL/USDT"]
+        for symbol in symbols:
+            perp_symbol = symbol + ":USDT"
+            try:
+                p = self.broker.fetch_position(perp_symbol)
+                if p and float(p.get("contracts") or 0.0) > 0 and p.get("side") == "short":
+                    contracts = float(p["contracts"])
+                    entry_p = float(p.get("entry_price") or 0.0)
+                    cs = self.broker.contract_size(perp_symbol)
+                    spot_amt = contracts * cs
+                    notional = spot_amt * entry_p if entry_p > 0 else 0.0
+                    if symbol not in self.positions:
+                        self.positions[symbol] = LiveCarryPosition(
+                            symbol=symbol,
+                            perp_symbol=perp_symbol,
+                            notional=notional,
+                            spot_entry=entry_p,
+                            spot_amount=spot_amt,
+                            perp_entry=entry_p,
+                            perp_contracts=contracts,
+                        )
+                        logger.warning(
+                            "[CARRY-LIVE] Readoptada posición existente de %s: %s contratos @ %.4f (notional ~%.2f USDT)",
+                            symbol, contracts, entry_p, notional
+                        )
+            except Exception:
+                logger.warning("[CARRY-LIVE] No pude consultar posición existente para %s", symbol)
 
     # --- Decisiones (idénticas al paper) ------------------------------------------
 
