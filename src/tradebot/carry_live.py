@@ -75,17 +75,21 @@ class LiveCarryExecutor:
     # --- Sizing -------------------------------------------------------------------
 
     def _target_notional(self) -> float:
-        """USDT por posición: % del USDT spot libre, topado por max_notional_usdt,
-        y limitado por el margen disponible en futuros (con 1x, margen≈notional)."""
+        """USDT por posición: % del USDT spot libre, y limitado por el margen
+        disponible en futuros (con 1x, margen≈notional). Si max_notional_usdt > 0,
+        aplica además ese tope fijo."""
         if self.dry_run:
-            # Sin balances reales: simulamos holgura para que mande el tope duro.
-            spot_free = fut_free = self.cfg.max_notional_usdt / max(self.cfg.notional_pct, 1e-9)
+            cap = self.cfg.max_notional_usdt if self.cfg.max_notional_usdt > 0 else 50.0
+            spot_free = fut_free = cap / max(self.cfg.notional_pct, 1e-9)
         else:
             spot_free = self.spot.fetch_balance("USDT")
             fut_free = self.broker.fetch_free_usdt()
         by_pct = spot_free * self.cfg.notional_pct
         margin_room = fut_free * self.broker.leverage
-        return max(0.0, min(self.cfg.max_notional_usdt, by_pct, margin_room))
+        target = min(by_pct, margin_room)
+        if self.cfg.max_notional_usdt > 0:
+            target = min(target, self.cfg.max_notional_usdt)
+        return max(0.0, target)
 
     # --- Operativa ----------------------------------------------------------------
 

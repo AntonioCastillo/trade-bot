@@ -175,7 +175,7 @@ carry:
   poll_interval_seconds: 300                  # chequear cada 5 min
   fee_pct: 0.0008                             # comisión aprox. por pata
   leverage: 1.0                               # 1x = riesgo mínimo de liquidación
-  max_notional_usdt: 50.0                     # tope DURO: máx $50 USDT por posición
+  max_notional_usdt: 0.0                      # 0.0 = 100% dinámico por notional_pct y margen en futuros
   liquidation_buffer_pct: 0.15                # cierre de emergencia si queda a <15% de la liquidación
 
 xsmom:
