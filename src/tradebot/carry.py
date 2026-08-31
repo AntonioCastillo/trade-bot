@@ -13,10 +13,12 @@ PERIODS_PER_YEAR: funding cada 8h -> 3/día.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .config import CarryConfig, Config
 from .exchange import Exchange
@@ -203,9 +205,44 @@ class CarryRunner:
                     f"efectivo {cash:.2f}" if cash is not None else "real/dry-run",
                     len(self.mgr.positions))
 
+        try:
+            self.write_status_file()
+        except Exception:
+            logger.exception("[CARRY] fallo al escribir el fichero de status")
+
+    def write_status_file(self, path: str | None = None) -> None:
+        """Vuelca el estado del carry trade a JSON para publicarlo en el Gist."""
+        if path is None:
+            from .status import carry_path, status_slot
+            path = carry_path(status_slot(self.config))
+        positions_list = []
+        for p in self.mgr.positions.values():
+            positions_list.append({
+                "symbol": p.symbol,
+                "notional": round(p.notional, 2),
+                "spot_entry": round(p.spot_entry, 6),
+                "perp_entry": round(p.perp_entry, 6),
+                "funding_collected": round(p.funding_collected, 4),
+                "opened_at": p.opened_at.isoformat() if hasattr(p.opened_at, "isoformat") else str(p.opened_at),
+            })
+        total_funding = sum(p.funding_collected for p in self.mgr.positions.values())
+        data = {
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "open_positions": len(positions_list),
+            "total_funding_collected": round(total_funding, 4),
+            "positions": positions_list,
+        }
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def run_forever(self) -> None:
         logger.info("[CARRY] runner iniciado (PAPER) | símbolos %s | umbral %.1f%% anual",
                     self._symbols, self.cfg.min_annualized_pct)
+        try:
+            self.write_status_file()
+        except Exception:
+            pass
         while True:
             try:
                 self.cycle()

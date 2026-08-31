@@ -98,13 +98,10 @@ def render_daily_report_telegram(engine: Engine, config: Config) -> str:
         equity = 0.0
         eq_str = "n/d"
 
-    start_bal = getattr(config.risk, "starting_balance", 0.0) or 0.0
-    total_ret = ((equity - start_bal) / start_bal * 100) if start_bal > 0 else 0.0
-
     lines = [
         f"📊 <b>ESTADO DE LA HIDRA</b>",
         f"━━━━━━━━━━━━━━━━━━━",
-        f"💰 <b>Patrimonio Total:</b> {eq_str} (<i>{total_ret:+.2f}%</i>)",
+        f"💰 <b>Patrimonio Total:</b> {eq_str}",
         f"📈 <b>P&L Realizado:</b> {s['pnl_abs']:+.2f} {quote} (Win Rate: {s['win_rate']*100:.1f}%)",
         f"🔢 <b>Operaciones cerradas:</b> {s['trades']}",
         f"🛡️ <b>Estado:</b> {'🟢 OPERANDO' if not engine.risk.halted else '🔴 DETENIDO (' + engine.risk.halted_reason + ')'}",

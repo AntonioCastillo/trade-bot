@@ -74,6 +74,7 @@ def test_status_slot_and_paths():
     assert status.status_slot(SimpleNamespace(exchange="kucoinfutures")) == "futuros"
     assert status.status_path("spot").replace("\\", "/") == "data/status_spot.json"
     assert status.xsmom_path("futuros").replace("\\", "/") == "data/xsmom_status_futuros.json"
+    assert status.carry_path("spot").replace("\\", "/") == "data/carry_status_spot.json"
 
 
 def test_merge_sniper_optional(tmp_path):
@@ -81,6 +82,13 @@ def test_merge_sniper_optional(tmp_path):
     sp.write_text(json.dumps({"open": 2}))
     assert status.merge_sniper({"mode": "paper"}, str(sp))["sniper"]["open"] == 2
     assert "sniper" not in status.merge_sniper({"mode": "paper"}, str(tmp_path / "nope.json"))
+
+
+def test_merge_carry_optional(tmp_path):
+    cp = tmp_path / "carry.json"
+    cp.write_text(json.dumps({"open_positions": 1, "total_funding_collected": 0.05}))
+    assert status.merge_carry({"mode": "live"}, str(cp))["carry"]["total_funding_collected"] == 0.05
+    assert "carry" not in status.merge_carry({"mode": "live"}, str(tmp_path / "nope.json"))
 
 
 def test_publish_to_gist_create_then_update(monkeypatch):

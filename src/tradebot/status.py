@@ -13,6 +13,7 @@ from typing import Any
 DEFAULT_STATUS_PATH = "data/status.json"
 DEFAULT_SNIPER_PATH = "data/sniper_status.json"
 DEFAULT_XSMOM_PATH = "data/xsmom_status.json"
+DEFAULT_CARRY_PATH = "data/carry_status.json"
 
 
 def status_slot(config) -> str:
@@ -37,6 +38,10 @@ def sniper_path(slot: str) -> str:
 
 def xsmom_path(slot: str) -> str:
     return _slot_path(DEFAULT_XSMOM_PATH, slot)
+
+
+def carry_path(slot: str) -> str:
+    return _slot_path(DEFAULT_CARRY_PATH, slot)
 
 
 def active_heads(config) -> list[dict]:
@@ -144,18 +149,25 @@ def merge_xsmom(status: dict, xsmom_path: str = DEFAULT_XSMOM_PATH) -> dict:
     return _merge_file(status, "xsmom", xsmom_path)
 
 
+def merge_carry(status: dict, carry_path: str = DEFAULT_CARRY_PATH) -> dict:
+    """Añade al status el resumen del carry trade (que su hilo deja en JSON), si existe."""
+    return _merge_file(status, "carry", carry_path)
+
+
 def load_merged(status_path: str = DEFAULT_STATUS_PATH,
                 sniper_path: str = DEFAULT_SNIPER_PATH,
-                xsmom_path: str = DEFAULT_XSMOM_PATH) -> dict:
+                xsmom_path: str = DEFAULT_XSMOM_PATH,
+                carry_path: str = DEFAULT_CARRY_PATH) -> dict:
     """Carga el status.json de disco y le fusiona los subsistemas. Para publicar."""
     data = json.loads(Path(status_path).read_text(encoding="utf-8"))
     merge_sniper(data, sniper_path)
-    return merge_xsmom(data, xsmom_path)
+    merge_xsmom(data, xsmom_path)
+    return merge_carry(data, carry_path)
 
 
 def load_unified(data_dir: str = "data") -> dict:
     """UN solo JSON con TODAS las instancias (spot y futuros). Recorre cada
-    data/status_<slot>.json, le fusiona su sniper/xsmom del mismo slot, y los
+    data/status_<slot>.json, le fusiona su sniper/xsmom/carry del mismo slot, y los
     agrupa bajo `instances`. Así spot y futuros conviven sin pisarse."""
     instances: dict[str, Any] = {}
     d = Path(data_dir)
@@ -167,6 +179,7 @@ def load_unified(data_dir: str = "data") -> dict:
             continue
         merge_sniper(data, str(d / f"sniper_status_{slot}.json"))
         merge_xsmom(data, str(d / f"xsmom_status_{slot}.json"))
+        merge_carry(data, str(d / f"carry_status_{slot}.json"))
         instances[slot] = data
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
