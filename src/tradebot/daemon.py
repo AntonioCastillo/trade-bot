@@ -466,16 +466,28 @@ def run_forever(
                     except Exception:
                         logger.exception("Fallo enviando el informe diario de medianoche")
 
-                # Un ciclo sobre todo el universo (cada símbolo aislado).
-                for symbol in symbols:
+                # Un ciclo sobre todo el universo (símbolos activos + posiciones abiertas pendientes).
+                open_symbols = [p.symbol for p in engine.positions]
+                loop_symbols = list(dict.fromkeys(symbols + open_symbols))
+
+                for symbol in loop_symbols:
                     try:
-                        tf = config.instrument(symbol).timeframe
+                        try:
+                            tf = config.instrument(symbol).timeframe
+                        except KeyError:
+                            tf = "1d"
                         candles = engine.exchange.fetch_ohlcv(
                             symbol, tf, config.lookback
                         )
                         if len(candles) < 2:
                             continue
-                        # Decidir solo sobre velas CERRADAS (descarta la vela en
+
+                        # Actualizar siempre el precio en vivo y evaluar salidas continuas (SL/TP) en cada sondeo de 60s
+                        live_price = float(candles["close"].iloc[-1])
+                        engine.last_prices[symbol] = live_price
+                        engine._check_exits(symbol, live_price, candles=candles)
+
+                        # Decidir entradas solo sobre velas CERRADAS (descarta la vela en
                         # formación) y UNA vez por vela, como el backtest. Evita
                         # re-disparar la misma señal en cada sondeo de 60s.
                         closed = candles.iloc[:-1]
