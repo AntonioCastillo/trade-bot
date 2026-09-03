@@ -430,21 +430,36 @@ def run_forever(
     except Exception:
         logger.warning("No pude fijar el equity inicial para el cortafuegos diario")
 
+    # Evaluación inicial de Fuerza Relativa (RS) en el arranque
+    now0 = datetime.now(timezone.utc)
+    last_rs_slot: tuple[object, int] = (now0.date(), now0.hour // 4)
+    try:
+        _maybe_evaluate_rs(engine, config)
+        symbols = _validate_symbols(engine, config.symbols())
+    except Exception:
+        logger.warning("Fallo en la evaluación inicial de RS")
+
     try:
         while True:
             try:
                 now = datetime.now(timezone.utc)
+
+                # Evaluación de Fuerza Relativa (RS) cada 4 Horas (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+                rs_slot = (now.date(), now.hour // 4)
+                if rs_slot != last_rs_slot:
+                    last_rs_slot = rs_slot
+                    try:
+                        logger.info("Evaluando Fuerza Relativa (RS) en slot 4H: %s %02dh UTC", now.date(), (now.hour // 4) * 4)
+                        _maybe_evaluate_rs(engine, config)
+                        symbols = _validate_symbols(engine, config.symbols())
+                    except Exception:
+                        logger.exception("Fallo al evaluar RS en cierre de 4H")
 
                 # Nuevo día UTC: reinicia el límite de pérdida diaria y envía el informe oficial.
                 if now.date() != current_day:
                     current_day = now.date()
                     engine.risk.reset_day(engine.equity())
                     logger.info("Nuevo día UTC (%s): cortafuegos diario reiniciado", current_day)
-                    try:
-                        _maybe_evaluate_rs(engine, config)
-                        symbols = _validate_symbols(engine, config.symbols())
-                    except Exception:
-                        logger.exception("Fallo al evaluar RS en cambio de día UTC")
                     try:
                         report_txt = render_daily_report_telegram(engine, config)
                         engine.notifier.notify(f"🌅 <b>INFORME DIARIO DE MEDIANOCHE (00:00 UTC)</b>\n\n{report_txt}")
