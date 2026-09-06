@@ -625,6 +625,16 @@ class Engine:
                 continue
             value = self.last_prices.get(p.symbol, p.entry_price) * p.amount
             total += value if p.side is Side.BUY else -value
+
+        # Si el Carry Trade tiene posiciones abiertas en spot, sumar su valor de mercado
+        carry_runner = getattr(self, "carry_runner", None)
+        if carry_runner is not None and getattr(carry_runner, "mgr", None) is not None:
+            for cp in carry_runner.mgr.positions.values():
+                spot_amt = getattr(cp, "spot_amount", 0.0)
+                if spot_amt > 0:
+                    val = self.last_prices.get(cp.symbol, getattr(cp, "spot_entry", 0.0)) * spot_amt
+                    total += val
+
         return total
 
     # --- Bucle principal (live / paper continuo) -----------------------------------

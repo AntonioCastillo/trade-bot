@@ -185,12 +185,14 @@ def _notify_alive(engine: Engine, config: Config) -> None:
         logger.exception("Fallo al enviar el informe de estado a Telegram")
 
 
-def _maybe_start_carry(config: Config, notifier: Notifier) -> threading.Thread | None:
-    """Si el carry está activado, lo arranca en un hilo del mismo proceso (PAPER).
+def _maybe_start_carry(config: Config, notifier: Notifier, engine: Engine | None = None) -> threading.Thread | None:
+    """Si el carry está activado, lo arranca en un hilo del mismo proceso (PAPER o REAL).
     Usa su propio cliente de exchange y su propio balance simulado."""
     if not config.carry.enabled:
         return None
     runner = CarryRunner(config, Exchange(config), notifier)
+    if engine is not None:
+        engine.carry_runner = runner
     thread = threading.Thread(target=runner.run_forever, name="carry", daemon=True)
     thread.start()
     # El propio runner ya loguea si es PAPER, DRY-RUN o REAL según config+confirmación.
@@ -294,7 +296,7 @@ def _maybe_first_run_api_check(engine: Engine, config: Config) -> None:
 
 def _live_preflight(engine: Engine, config: Config, symbols: list[str]) -> None:
     """En modo live, avisa qué símbolos no llegan al mínimo de orden de KuCoin
-    con el tamaño de posición actual (balance × position_size_pct)."""
+    con el tamaño de posición actual (balance * position_size_pct)."""
     try:
         balance = engine.execution.get_balance()
     except Exception:
@@ -407,7 +409,7 @@ def run_forever(
     )
     _maybe_first_run_api_check(engine, config)
     _maybe_start_sniper(config, engine.notifier)
-    _maybe_start_carry(config, engine.notifier)
+    _maybe_start_carry(config, engine.notifier, engine=engine)
     _maybe_start_xsmom(config, engine.notifier)
     # Deja un status.json inicial (hilo principal) para que el publicador ya tenga
     # qué subir en su primera vuelta, sin esperar al primer informe.
