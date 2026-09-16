@@ -133,10 +133,9 @@ class LiveCarryExecutor:
              funding_ts: int = 0) -> LiveCarryPosition | None:
         perp_symbol = symbol + ":USDT"
         notional = self._target_notional()
-        if notional < 1.0:  # KuCoin: por debajo del mínimo no tiene sentido
-            logger.warning("[CARRY-LIVE] notional %.2f insuficiente para %s; no abro",
-                           notional, symbol)
-            self.notifier.notify(f"⚠️ <b>CARRY</b> sin margen suficiente para {symbol}")
+        if notional < 5.0:  # Margen libre en futuros o spot totalmente utilizado
+            logger.info("[CARRY-LIVE] Margen libre insuficiente (%.2f USDT) para abrir posición adicional en %s",
+                        notional, symbol)
             return None
 
         contracts = self.broker.contracts_for_notional(perp_symbol, notional, perp_price)
