@@ -101,8 +101,14 @@ class LiveCarryExecutor:
     # --- Decisiones (idénticas al paper) ------------------------------------------
 
     def should_open(self, symbol: str, rate: float) -> bool:
-        return (symbol not in self.positions
-                and annualized_pct(rate) >= self.cfg.min_annualized_pct)
+        if symbol in self.positions:
+            return False
+        if annualized_pct(rate) < self.cfg.min_annualized_pct:
+            return False
+        # Si el margen libre o saldo spot ya está ocupado (<10 USDT disponibles), no intentar abrir
+        if self._target_notional() < 10.0:
+            return False
+        return True
 
     def should_close(self, symbol: str, rate: float) -> bool:
         return (symbol in self.positions

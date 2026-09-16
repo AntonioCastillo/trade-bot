@@ -69,8 +69,13 @@ class CarryManager:
     # --- Decisiones ---------------------------------------------------------------
 
     def should_open(self, symbol: str, rate: float) -> bool:
-        return (symbol not in self.positions
-                and annualized_pct(rate) >= self.cfg.min_annualized_pct)
+        if symbol in self.positions:
+            return False
+        if annualized_pct(rate) < self.cfg.min_annualized_pct:
+            return False
+        if (self.balance * self.cfg.notional_pct) < 5.0:
+            return False
+        return True
 
     def should_close(self, symbol: str, rate: float) -> bool:
         return (symbol in self.positions
