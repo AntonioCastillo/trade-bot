@@ -32,36 +32,54 @@ class LiveExecutionEngine:
         if self.config.exchange == "kucoinfutures" and ":" not in symbol:
             symbol = f"{symbol}:USDT"
 
-        if self.config.exchange == "kucoinfutures":
-            notional = order.amount * order.price
-            contracts = self.exchange.contracts_for_notional(symbol, notional, order.price)
-            if contracts <= 0:
-                raise OrderRejected(f"{symbol}: contratos calculados = 0 para notional {notional:.2f}")
+        try:
+            if self.config.exchange == "kucoinfutures":
+                notional = order.amount * order.price
+                contracts = self.exchange.contracts_for_notional(symbol, notional, order.price)
+                if contracts <= 0:
+                    raise OrderRejected(f"{symbol}: contratos calculados = 0 para notional {notional:.2f}")
 
-            result = self.exchange.create_futures_order(symbol, order.side.value, contracts)
-            return self._to_fill_futures(order, result, symbol)
-        else:
-            limits = self.exchange.market_limits(symbol)
-            if order.side is Side.BUY:
-                cost = order.amount * order.price
-                min_cost = limits.get("min_cost")
-                if min_cost and cost < min_cost:
-                    raise OrderRejected(
-                        f"{symbol}: coste {cost:.4f} {self.quote_currency} < mínimo {min_cost}"
-                    )
-                result = self.exchange.create_market_buy(symbol, cost)
+                result = self.exchange.create_futures_order(symbol, order.side.value, contracts)
+                return self._to_fill_futures(order, result, symbol)
             else:
-                amount = self.exchange.amount_to_precision(symbol, order.amount)
-                if amount <= 0:
-                    raise OrderRejected(f"{symbol}: cantidad tras redondeo = 0")
-                min_amount = limits.get("min_amount")
-                if min_amount and amount < min_amount:
-                    raise OrderRejected(
-                        f"{symbol}: cantidad {amount} < mínimo {min_amount}"
-                    )
-                result = self.exchange.create_market_sell(symbol, amount)
+                limits = self.exchange.market_limits(symbol)
+                if order.side is Side.BUY:
+                    cost = order.amount * order.price
+                    min_cost = limits.get("min_cost")
+                    if min_cost and cost < min_cost:
+                        raise OrderRejected(
+                            f"{symbol}: coste {cost:.4f} {self.quote_currency} < mínimo {min_cost}"
+                        )
+                    # Asegurar que el coste no supere el saldo libre real menos comisiones
+                    try:
+                        free_bal = self.get_balance()
+                        if free_bal > 0 and cost > free_bal * 0.995:
+                            cost = free_bal * 0.995
+                        if min_cost and cost < min_cost:
+                            raise OrderRejected(f"{symbol}: saldo libre ({free_bal:.2f}) insuficiente para coste mínimo {min_cost}")
+                    except Exception:
+                        pass
 
-            return self._to_fill(order, result)
+                    result = self.exchange.create_market_buy(symbol, cost)
+                else:
+                    amount = self.exchange.amount_to_precision(symbol, order.amount)
+                    if amount <= 0:
+                        raise OrderRejected(f"{symbol}: cantidad tras redondeo = 0")
+                    min_amount = limits.get("min_amount")
+                    if min_amount and amount < min_amount:
+                        raise OrderRejected(
+                            f"{symbol}: cantidad {amount} < mínimo {min_amount}"
+                        )
+                    result = self.exchange.create_market_sell(symbol, amount)
+
+                return self._to_fill(order, result)
+        except OrderRejected:
+            raise
+        except Exception as exc:
+            import ccxt
+            if isinstance(exc, ccxt.InsufficientFunds) or "insufficient" in str(exc).lower():
+                raise OrderRejected(f"{symbol}: saldo insuficiente en exchange ({exc})") from exc
+            raise
 
     def _to_fill(self, order: Order, result: dict) -> Fill:
         filled_price = float(result.get("average") or result.get("price") or order.price)
