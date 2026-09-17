@@ -2,6 +2,8 @@
 
 Sistema autónomo de trading algorítmico multicabeza para **KuCoin**, diseñado con gestión de riesgo institucional, selección dinámica por **Fuerza Relativa (RS vs BTC)** y módulo **Carry Trade delta-neutral**.
 
+> 📌 **Guía de Onboarding (Cero Contexto):** Consulta [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) para conocer el contexto completo, las decisiones de diseño, el mapa del código fuente y los resultados empíricos auditados.
+
 ---
 
 ## 📖 1. ¿Cómo Funciona el Sistema?
