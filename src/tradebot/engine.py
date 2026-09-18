@@ -408,11 +408,23 @@ class Engine:
         self.positions = still_open
 
     def _execute_partial_close(self, pos: Position, close_order: Order) -> bool:
-        try:
-            fill = self.execution.execute(close_order)
-        except OrderRejected as e:
-            logger.warning("[%s] no se pudo realizar cierre parcial (%s)", pos.symbol, e)
+        import time
+        fill = None
+        last_err = None
+        for attempt in range(1, 4):
+            try:
+                fill = self.execution.execute(close_order)
+                break
+            except Exception as e:
+                last_err = e
+                logger.warning("[%s] Intento %d/3 de toma parcial fallido (%s)", pos.symbol, attempt, e)
+                if attempt < 3:
+                    time.sleep(1.0)
+
+        if fill is None:
+            logger.error("[%s] No se pudo realizar cierre parcial tras 3 intentos (%s); reintentaré en el próximo ciclo", pos.symbol, last_err)
             return False
+
         self.storage.record_fill(fill)
 
         closed_amount = fill.filled_amount
@@ -464,11 +476,23 @@ class Engine:
         return True
 
     def _close_position(self, pos: Position, close_order) -> bool:
-        try:
-            fill = self.execution.execute(close_order)
-        except OrderRejected as e:
-            logger.warning("[%s] no se pudo cerrar (%s); reintentaré", pos.symbol, e)
+        import time
+        fill = None
+        last_err = None
+        for attempt in range(1, 4):
+            try:
+                fill = self.execution.execute(close_order)
+                break
+            except Exception as e:
+                last_err = e
+                logger.warning("[%s] Intento %d/3 de cierre (%s) fallido (%s)", pos.symbol, attempt, close_order.reason, e)
+                if attempt < 3:
+                    time.sleep(1.0)
+
+        if fill is None:
+            logger.error("[%s] No se pudo cerrar posición tras 3 intentos (%s); reintentaré en el próximo ciclo", pos.symbol, last_err)
             return False
+
         self.storage.record_fill(fill)
 
         direction = 1 if pos.side is Side.BUY else -1
