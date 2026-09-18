@@ -423,6 +423,11 @@ class Engine:
 
         if fill is None:
             logger.error("[%s] No se pudo realizar cierre parcial tras 3 intentos (%s); reintentaré en el próximo ciclo", pos.symbol, last_err)
+            self.notifier.notify(
+                f"⚠️ <b>FALLO EN TOMA PARCIAL</b> {pos.symbol}\n"
+                f"Error: {last_err}\n"
+                f"Reintentando automáticamente en el siguiente ciclo (60s)."
+            )
             return False
 
         self.storage.record_fill(fill)
@@ -491,6 +496,12 @@ class Engine:
 
         if fill is None:
             logger.error("[%s] No se pudo cerrar posición tras 3 intentos (%s); reintentaré en el próximo ciclo", pos.symbol, last_err)
+            self.notifier.notify(
+                f"🚨 <b>ERROR AL CERRAR POSICIÓN</b> {pos.symbol}\n"
+                f"Motivo salida: <b>{close_order.reason}</b>\n"
+                f"Detalle error: <code>{last_err}</code>\n"
+                f"⚠️ La posición permanece abierta y se reintentará en el próximo ciclo (60s)."
+            )
             return False
 
         self.storage.record_fill(fill)
