@@ -62,6 +62,15 @@ class LiveExecutionEngine:
 
                     result = self.exchange.create_market_buy(symbol, cost)
                 else:
+                    # Asegurar que la cantidad a vender no supere el saldo real disponible (por comisiones cobradas en moneda base)
+                    base_currency = symbol.split("/")[0]
+                    try:
+                        real_balance = self.exchange.fetch_balance(base_currency)
+                        if real_balance > 0 and order.amount > real_balance:
+                            order.amount = real_balance
+                    except Exception:
+                        pass
+
                     amount = self.exchange.amount_to_precision(symbol, order.amount)
                     if amount <= 0:
                         raise OrderRejected(f"{symbol}: cantidad tras redondeo = 0")
