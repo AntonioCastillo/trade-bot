@@ -8,11 +8,11 @@
 ## 📌 1. Resumen Ejecutivo del Proyecto
 
 *   **Objetivo:** Bot cuantitativo de trading algorítmico multicabeza, autónomo y desatendido, operando en **KuCoin Live (Dinero Real)**.
-*   **Capital Operativo:** **~\$1.500 – \$1.535 USDT** (repartido entre Spot y margen de Futuros).
-*   **Resultados Reales en Vivo:**
-    *   **Win Rate:** **93.8%** (15 victorias de 16 operaciones cerradas).
-    *   **Beneficio Realizado en Caja:** **+\$38.78 USDT**.
-    *   **Beneficio Neto Global (Caja + Flotante):** **+\$50.97 USDT**.
+*   **Capital Operativo:** **~$1.500 – $1.535 USDT** (repartido entre Spot y margen de Futuros).
+*   **Resultados Reales en Vivo (KuCoin Live a 18-Sep-2026):**
+    *   **Win Rate:** **94.4%** (17 victorias de 18 operaciones cerradas).
+    *   **Beneficio Realizado en Caja:** **+$69.94 USDT**.
+    *   **Ganancia Media por Trade:** **+6.01%**.
     *   **Máximo Drawdown:** **0.0%** (Cero pérdidas catastróficas).
 *   **Infraestructura:** Corre 24/7 en un servidor **VPS Linux (Ubuntu)** gestionado por `systemd` como servicio daemon permanente (`tradebot.service`).
 
