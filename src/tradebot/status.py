@@ -135,6 +135,21 @@ def write_status(engine, config, path: str | None = None) -> None:
     p.write_text(json.dumps(build_status(engine, config), indent=2, ensure_ascii=False),
                  encoding="utf-8")
 
+    # Si carry está desactivado, limpiar carry_status para que el publicador no arrastre posiciones residuales
+    if not config.carry.enabled:
+        try:
+            cp = Path(carry_path(status_slot(config)))
+            total_f = round(engine.storage.total_funding_collected(), 4) if getattr(engine, "storage", None) else 0.0
+            carry_data = {
+                "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "open_positions": 0,
+                "total_funding_collected": total_f,
+                "positions": [],
+            }
+            cp.write_text(json.dumps(carry_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
 
 def _merge_file(status: dict, key: str, path: str) -> dict:
     """Fusiona en `status[key]` el JSON de un subsistema (sniper/xsmom), si existe."""
