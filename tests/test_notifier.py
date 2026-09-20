@@ -58,3 +58,41 @@ def test_engine_notifies_on_open(price_series):
     engine.process("BTC/USDT", price_series(prices))
 
     assert any("ABRE" in m for m in cap.messages)
+
+
+def test_typed_domain_notifications():
+    cap = _Capture()
+    from tradebot.models import Position, Side
+
+    pos = Position(
+        symbol="ETH/USDT",
+        side=Side.BUY,
+        amount=1.0,
+        entry_price=2500.0,
+        stop_loss=2400.0,
+        take_profit=2700.0,
+    )
+
+    cap.notify_trade_opened(pos, "majors/trend", "breakout signal", 1000.0, "USDT")
+    assert len(cap.messages) == 1
+    assert "<b>ABRE</b> BUY ETH/USDT" in cap.messages[0]
+    assert "majors/trend" in cap.messages[0]
+
+    cap.notify_partial_tp("ETH/USDT", 2625.0, "majors/trend", 125.0, 5.0, 2500.0, 1125.0, "USDT")
+    assert len(cap.messages) == 2
+    assert "TOMA PARCIAL" in cap.messages[1]
+    assert "+125.00 USDT" in cap.messages[1]
+
+    cap.notify_trade_closed("ETH/USDT", 2500.0, 2700.0, "take-profit", 200.0, 8.0, "majors/trend", 1200.0, "USDT")
+    assert len(cap.messages) == 3
+    assert "CIERRA" in cap.messages[2]
+    assert "+200.00 USDT" in cap.messages[2]
+
+    cap.notify_circuit_breaker(0.16, 0.15)
+    assert len(cap.messages) == 4
+    assert "DISYUNTOR CRÍTICO" in cap.messages[3]
+
+    cap.notify_execution_error("cerrar posición", "ETH/USDT", "timeout", "reintentando...")
+    assert len(cap.messages) == 5
+    assert "ERROR EN CERRAR POSICIÓN" in cap.messages[4]
+

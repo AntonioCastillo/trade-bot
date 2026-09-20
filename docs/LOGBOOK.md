@@ -4,7 +4,8 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
-* [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 1: Daemon, CLI Unificada y Legacy Archive)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-1-daemon-cli-unificada-y-legacy-archive)
+* [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+* [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 1: Daemon, CLI Unificada y Legacy Archive) (Commit `313c289`)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-1-daemon-cli-unificada-y-legacy-archive)
 * [2026-09-20 | Desmontaje de Carry Trade, Liberación de Liquidez y Radar de Funding >25% (Commit `ba39b8a`)](#2026-09-20--desmontaje-de-carry-trade-liberación-de-liquidez-y-radar-de-funding-25)
 * [2026-09-20 | Persistencia y Sincronización Histórica de Funding (KuCoin Futures API -> SQLite) (Commit `85ae9b1`)](#2026-09-20--persistencia-y-sincronización-histórica-de-funding-kucoin-futures-api---sqlite)
 * [2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS (Commit `de8a166`)](#2026-09-20--optimización-y-consolidación-de-notificaciones-de-rotación-rs)
@@ -15,6 +16,23 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-18 | Reconciliación de Saldo Real por Deducción de Comisiones Base (Commit `c13026b`)](#2026-09-18--reconciliación-de-saldo-real-por-deducción-de-comisiones-base-commit-c13026b)
 * [2026-09-18 | Documentación de Onboarding Cero Contexto (Commit `788f819`)](#2026-09-18--documentación-de-onboarding-cero-contexto-commit-788f819)
 * [2026-09-01 a 2026-09-16 | Hitos Fundacionales de la Arquitectura Hidra Multicabeza](#hitos-fundacionales-de-la-arquitectura-hidra-multicabeza)
+
+---
+
+### 2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)
+
+* **Archivos Afectados:** [`src/tradebot/models.py`](../src/tradebot/models.py), [`src/tradebot/notifier.py`](../src/tradebot/notifier.py), [`src/tradebot/telegram_views.py`](../src/tradebot/telegram_views.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/carry.py`](../src/tradebot/carry.py), [`tests/test_models.py`](../tests/test_models.py), [`tests/test_notifier.py`](../tests/test_notifier.py)
+* **Motivo / Petición del Usuario:**
+  * El usuario instruyó continuar con los siguientes dos bloques: *"dale con los 2, asegurando no romper nada"*.
+* **Cambios Implementados:**
+  1. **Notificaciones Tipadas de Dominio (`notifier.py` + `telegram_views.py`):**
+     - Se eliminó la inyección directa de cadenas HTML en el núcleo del motor `Engine`.
+     - `Notifier` incorpora métodos de dominio: `notify_trade_opened`, `notify_trade_closed`, `notify_partial_tp`, `notify_circuit_breaker`, `notify_execution_error`.
+     - Las plantillas y el formato visual de Telegram se encapsularon en `telegram_views.py`.
+  2. **Unificación de Modelos de Dominio (`models.py`):**
+     - Centralización canónica de `CarryPosition` en `src/tradebot/models.py`, re-exportándolo en `src/tradebot/carry.py` para compatibilidad total.
+     - Incorporación de métodos universales `to_dict()` y `from_dict()` en `Position`, `ClosedTrade`, `CarryPosition`, `Signal`, `Order`, `Fill` para estandarizar la serialización JSON / SQLite.
+* **Verificación:** 213 tests unitarios y de integración ejecutados y pasando al 100% (`213 passed`).
 
 ---
 

@@ -13,12 +13,69 @@ import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 
+from typing import Any
+
+from .telegram_views import (
+    render_circuit_breaker_halt,
+    render_execution_error,
+    render_partial_tp,
+    render_trade_closed,
+    render_trade_opened,
+)
+
 logger = logging.getLogger(__name__)
 
 
 class Notifier(ABC):
     @abstractmethod
     def notify(self, text: str) -> None: ...
+
+    def notify_trade_opened(
+        self, position: Any, head: str, signal_reason: str, equity: float, quote: str
+    ) -> None:
+        msg = render_trade_opened(position, head, signal_reason, equity, quote)
+        self.notify(msg)
+
+    def notify_trade_closed(
+        self,
+        symbol: str,
+        entry_price: float,
+        exit_price: float,
+        reason: str,
+        pnl_abs: float,
+        pnl_pct: float,
+        head: str,
+        equity: float,
+        quote: str,
+    ) -> None:
+        msg = render_trade_closed(
+            symbol, entry_price, exit_price, reason, pnl_abs, pnl_pct, head, equity, quote
+        )
+        self.notify(msg)
+
+    def notify_partial_tp(
+        self,
+        symbol: str,
+        fill_price: float,
+        head: str,
+        pnl_abs: float,
+        pnl_pct: float,
+        stop_loss: float,
+        equity: float,
+        quote: str,
+    ) -> None:
+        msg = render_partial_tp(symbol, fill_price, head, pnl_abs, pnl_pct, stop_loss, equity, quote)
+        self.notify(msg)
+
+    def notify_circuit_breaker(self, current_dd: float, max_dd: float) -> None:
+        msg = render_circuit_breaker_halt(current_dd, max_dd)
+        self.notify(msg)
+
+    def notify_execution_error(
+        self, action: str, symbol: str, error: Any, details: str = ""
+    ) -> None:
+        msg = render_execution_error(action, symbol, error, details)
+        self.notify(msg)
 
 
 class NullNotifier(Notifier):

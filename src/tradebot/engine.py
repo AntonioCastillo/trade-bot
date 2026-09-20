@@ -74,11 +74,9 @@ class Engine:
             # Disyuntor global de pérdida de cuenta
             if self.risk.halted and self.risk.halted_reason == "drawdown_cuenta" and len(self.positions) > 0:
                 logger.critical("[DISYUNTOR] Drawdown global crítico de cuenta alcanzado. Cerrando todo.")
-                self.notifier.notify(
-                    "🚨 <b>DISYUNTOR CRÍTICO ACTIVADO</b> 🚨\n"
-                    f"El Drawdown global de la cuenta ha superado el límite permitido "
-                    f"({self.risk.global_drawdown * 100:.1f}% >= {getattr(self.config.risk, 'max_account_drawdown_pct', 0.15) * 100:.1f}%).\n"
-                    "Cerrando todas las posiciones abiertas y deteniendo bot de forma permanente."
+                self.notifier.notify_circuit_breaker(
+                    self.risk.global_drawdown,
+                    getattr(self.config.risk, "max_account_drawdown_pct", 0.15),
                 )
                 self.emergency_close_all(reason="global_drawdown_halt")
 
@@ -383,13 +381,12 @@ class Engine:
         )
         self._log_head(instrument.category,
                        f"ABRE {position.side.value} {symbol} @ {position.entry_price:.6f} | saldo {equity:.2f} {quote} — {signal.reason}")
-        self.notifier.notify(
-            f"🟢 <b>ABRE</b> {position.side.value.upper()} {symbol}\n"
-            f"Cabeza: {head}\n"
-            f"Precio: {position.entry_price:.6f}  |  Tamaño: {position.amount:.8f}\n"
-            f"SL: {position.stop_loss:.6f}  TP: {position.take_profit:.6f}\n"
-            f"Saldo cuenta: {equity:.2f} {quote}\n"
-            f"Motivo: {signal.reason}"
+        self.notifier.notify_trade_opened(
+            position=position,
+            head=head,
+            signal_reason=signal.reason,
+            equity=equity,
+            quote=quote,
         )
 
     def emergency_close_all(self, reason: str = "emergency_close") -> None:
@@ -423,10 +420,11 @@ class Engine:
 
         if fill is None:
             logger.error("[%s] No se pudo realizar cierre parcial tras 3 intentos (%s); reintentaré en el próximo ciclo", pos.symbol, last_err)
-            self.notifier.notify(
-                f"⚠️ <b>FALLO EN TOMA PARCIAL</b> {pos.symbol}\n"
-                f"Error: {last_err}\n"
-                f"Reintentando automáticamente en el siguiente ciclo (60s)."
+            self.notifier.notify_execution_error(
+                action="toma parcial",
+                symbol=pos.symbol,
+                error=last_err,
+                details="Reintentando automáticamente en el siguiente ciclo (60s).",
             )
             return False
 
@@ -471,12 +469,15 @@ class Engine:
         )
         self._log_head(pos.category,
                        f"TOMA PARCIAL {pos.symbol} @ {fill.filled_price:.6f} | P&L {pnl_abs:+.2f} {quote} ({pnl_pct:+.2f}%) | SL Breakeven {pos.stop_loss:.6f}")
-        self.notifier.notify(
-            f"💰 <b>TOMA PARCIAL (50%)</b> {pos.symbol}\n"
-            f"Cabeza: {head}\n"
-            f"Precio venta: {fill.filled_price:.6f}  |  P&L: {pnl_abs:+.2f} {quote} ({pnl_pct:+.2f}%)\n"
-            f"SL restante ajustado a Breakeven: {pos.stop_loss:.6f}\n"
-            f"Saldo cuenta: {equity:.2f} {quote}"
+        self.notifier.notify_partial_tp(
+            symbol=pos.symbol,
+            fill_price=fill.filled_price,
+            head=head,
+            pnl_abs=pnl_abs,
+            pnl_pct=pnl_pct,
+            stop_loss=pos.stop_loss,
+            equity=equity,
+            quote=quote,
         )
         return True
 
@@ -496,11 +497,11 @@ class Engine:
 
         if fill is None:
             logger.error("[%s] No se pudo cerrar posición tras 3 intentos (%s); reintentaré en el próximo ciclo", pos.symbol, last_err)
-            self.notifier.notify(
-                f"🚨 <b>ERROR AL CERRAR POSICIÓN</b> {pos.symbol}\n"
-                f"Motivo salida: <b>{close_order.reason}</b>\n"
-                f"Detalle error: <code>{last_err}</code>\n"
-                f"⚠️ La posición permanece abierta y se reintentará en el próximo ciclo (60s)."
+            self.notifier.notify_execution_error(
+                action="cerrar posición",
+                symbol=pos.symbol,
+                error=last_err,
+                details=f"Motivo salida: <b>{close_order.reason}</b>\n⚠️ La posición permanece abierta y se reintentará en el próximo ciclo (60s).",
             )
             return False
 
@@ -533,13 +534,16 @@ class Engine:
         )
         self._log_head(pos.category,
                        f"CIERRA {pos.symbol} ({close_order.reason}) P&L {pnl_abs:+.2f} ({pnl_pct:+.2f}%) | saldo {equity:.2f} {quote}")
-        emoji = "✅" if pnl_abs >= 0 else "❌"
-        self.notifier.notify(
-            f"{emoji} <b>CIERRA</b> {pos.symbol} ({close_order.reason})\n"
-            f"Cabeza: {head}\n"
-            f"Entrada: {pos.entry_price:.6f}  →  Salida: {fill.filled_price:.6f}\n"
-            f"P&L: {pnl_abs:+.2f} {quote} ({pnl_pct:+.2f}%)\n"
-            f"Saldo cuenta: {equity:.2f} {quote}"
+        self.notifier.notify_trade_closed(
+            symbol=pos.symbol,
+            entry_price=pos.entry_price,
+            exit_price=fill.filled_price,
+            reason=close_order.reason,
+            pnl_abs=pnl_abs,
+            pnl_pct=pnl_pct,
+            head=head,
+            equity=equity,
+            quote=quote,
         )
         return True
 

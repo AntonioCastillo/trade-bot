@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .config import CarryConfig, Config
 from .exchange import Exchange
+from .models import CarryPosition
 from .notifier import Notifier, NullNotifier
 from .storage import Storage
 
@@ -33,30 +34,6 @@ PERIODS_PER_YEAR = 3 * 365
 def annualized_pct(rate: float) -> float:
     """Rendimiento anualizado si el funding por periodo se mantuviera."""
     return rate * PERIODS_PER_YEAR * 100
-
-
-@dataclass
-class CarryPosition:
-    symbol: str                 # spot, p.ej. ETH/USDT
-    notional: float             # USDT por pata
-    spot_entry: float
-    perp_entry: float
-    spot_amount: float
-    perp_amount: float
-    funding_collected: float = 0.0
-    last_funding_ts: int = 0
-    opened_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-
-    def spot_value(self, spot_now: float) -> float:
-        return self.spot_amount * spot_now
-
-    def perp_pnl(self, perp_now: float) -> float:
-        # Corto: gana si el perp baja respecto a la entrada.
-        return (self.perp_entry - perp_now) * self.perp_amount
-
-    def net_pnl(self, spot_now: float, perp_now: float) -> float:
-        """P&L neto (sin contar comisiones): (spot - notional) + perp corto + funding."""
-        return (self.spot_value(spot_now) - self.notional) + self.perp_pnl(perp_now) + self.funding_collected
 
 
 class CarryManager:

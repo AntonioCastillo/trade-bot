@@ -159,3 +159,78 @@ def render_rs_rotations(rotations: list[dict[str, Any]]) -> str:
             f"  Anteriores: {', '.join(rot['old_syms'])}"
         )
     return "\n".join(lines)
+
+
+def render_trade_opened(
+    position: Any, head: str, signal_reason: str, equity: float, quote: str
+) -> str:
+    """Mensaje formateado al abrir una posición."""
+    side_str = position.side.value.upper() if hasattr(position.side, "value") else str(position.side).upper()
+    return (
+        f"🟢 <b>ABRE</b> {side_str} {position.symbol}\n"
+        f"Cabeza: {head}\n"
+        f"Precio: {position.entry_price:.6f}  |  Tamaño: {position.amount:.8f}\n"
+        f"SL: {position.stop_loss:.6f}  TP: {position.take_profit:.6f}\n"
+        f"Saldo cuenta: {equity:.2f} {quote}\n"
+        f"Motivo: {signal_reason}"
+    )
+
+
+def render_trade_closed(
+    symbol: str,
+    entry_price: float,
+    exit_price: float,
+    reason: str,
+    pnl_abs: float,
+    pnl_pct: float,
+    head: str,
+    equity: float,
+    quote: str,
+) -> str:
+    """Mensaje formateado al cerrar completamente una posición."""
+    emoji = "✅" if pnl_abs >= 0 else "❌"
+    return (
+        f"{emoji} <b>CIERRA</b> {symbol} ({reason})\n"
+        f"Cabeza: {head}\n"
+        f"Entrada: {entry_price:.6f}  →  Salida: {exit_price:.6f}\n"
+        f"P&L: {pnl_abs:+.2f} {quote} ({pnl_pct:+.2f}%)\n"
+        f"Saldo cuenta: {equity:.2f} {quote}"
+    )
+
+
+def render_partial_tp(
+    symbol: str,
+    fill_price: float,
+    head: str,
+    pnl_abs: float,
+    pnl_pct: float,
+    stop_loss: float,
+    equity: float,
+    quote: str,
+) -> str:
+    """Mensaje formateado al cobrar Take Profit parcial."""
+    return (
+        f"💰 <b>TOMA PARCIAL (50%)</b> {symbol}\n"
+        f"Cabeza: {head}\n"
+        f"Precio venta: {fill_price:.6f}  |  P&L: {pnl_abs:+.2f} {quote} ({pnl_pct:+.2f}%)\n"
+        f"SL restante ajustado a Breakeven: {stop_loss:.6f}\n"
+        f"Saldo cuenta: {equity:.2f} {quote}"
+    )
+
+
+def render_circuit_breaker_halt(current_dd: float, max_dd: float) -> str:
+    """Mensaje de emergencia del disyuntor de drawdown de cuenta."""
+    return (
+        "🚨 <b>DISYUNTOR CRÍTICO ACTIVADO</b> 🚨\n"
+        f"El Drawdown global de la cuenta ha superado el límite permitido "
+        f"({current_dd * 100:.1f}% >= {max_dd * 100:.1f}%).\n"
+        "Cerrando todas las posiciones abiertas y deteniendo bot de forma permanente."
+    )
+
+
+def render_execution_error(action: str, symbol: str, error: Any, details: str = "") -> str:
+    """Mensaje formateado de fallo en la ejecución de órdenes."""
+    base = f"⚠️ <b>ERROR EN {action.upper()}</b> {symbol}\nDetalle: <code>{error}</code>"
+    if details:
+        base += f"\n{details}"
+    return base
