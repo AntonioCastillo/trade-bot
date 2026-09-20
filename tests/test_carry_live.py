@@ -3,6 +3,7 @@ selección paper/real en el runner y cierre de emergencia por liquidación.
 
 Todo con DOBLES: no toca red ni envía órdenes."""
 
+import pytest
 from conftest import make_config, make_instrument
 
 from tradebot.carry import CarryManager, CarryRunner
@@ -143,3 +144,19 @@ def test_monitor_emergency_close_near_liquidation():
     ex.monitor()
     assert "ETH/USDT" not in ex.positions   # cerrada de emergencia
     assert spot.sells and broker.closes
+
+
+def test_live_funding_persists_to_storage():
+    from tradebot.storage import Storage
+    st = Storage(":memory:")
+    cfg = _cfg()
+    spot = FakeSpot(free=1000.0, price=2000.0)
+    broker = FakeBroker(dry_run=False, free=1000.0)
+    ex = LiveCarryExecutor(cfg, spot, broker, NullNotifier(), storage=st)
+    pos = ex.open("ETH/USDT", spot_price=2000.0, perp_price=2000.0, funding_ts=1000)
+    assert pos is not None
+    pay = ex.accrue_funding("ETH/USDT", rate=0.0001, funding_ts=2000)
+    assert pay > 0.0
+    assert st.total_funding_collected() == pytest.approx(pay)
+    assert len(st.all_funding_payments()) == 1
+

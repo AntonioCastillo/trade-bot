@@ -68,6 +68,15 @@ CREATE TABLE IF NOT EXISTS state (
     key   TEXT PRIMARY KEY,
     value REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS funding_payments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp     TEXT NOT NULL,
+    symbol        TEXT NOT NULL,
+    rate          REAL NOT NULL,
+    amount_usdt   REAL NOT NULL,
+    notional      REAL NOT NULL
+);
 """
 
 
@@ -241,6 +250,30 @@ class Storage:
             " SUM(pnl_abs) pnl_abs, AVG(pnl_pct) avg_pnl_pct,"
             " SUM(CASE WHEN pnl_abs > 0 THEN 1 ELSE 0 END) wins"
             f" FROM closed_trades GROUP BY {column} ORDER BY pnl_abs DESC"
+        ).fetchall()
+
+    # --- Pagos de Funding (Carry Trade) -------------------------------------------
+
+    def record_funding_payment(self, timestamp: str, symbol: str, rate: float, amount_usdt: float, notional: float) -> None:
+        """Registra un cobro periódico de tasa de financiación en SQLite."""
+        self._conn.execute(
+            "INSERT INTO funding_payments (timestamp, symbol, rate, amount_usdt, notional)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (timestamp, symbol, float(rate), float(amount_usdt), float(notional)),
+        )
+        self._conn.commit()
+
+    def total_funding_collected(self) -> float:
+        """Total acumulado de funding cobrado históricamente desde el inicio del bot."""
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(amount_usdt), 0.0) AS total FROM funding_payments"
+        ).fetchone()
+        return float(row["total"]) if row else 0.0
+
+    def all_funding_payments(self) -> list[sqlite3.Row]:
+        """Historial completo de pagos de funding."""
+        return self._conn.execute(
+            "SELECT * FROM funding_payments ORDER BY id DESC"
         ).fetchall()
 
     def close(self) -> None:

@@ -61,3 +61,20 @@ def test_close_realizes_into_balance():
     assert "ETH/USDT" not in m.positions
     # Sin cambio de precio ni funding: pérdida = comisiones de cierre.
     assert net == pytest.approx(-200 * 0.0008 * 2)
+
+
+def test_funding_persists_to_storage():
+    from tradebot.storage import Storage
+    st = Storage(":memory:")
+    cfg = CarryConfig(notional_pct=0.20, min_annualized_pct=5.0,
+                      exit_annualized_pct=0.0, fee_pct=0.0008)
+    m = CarryManager(cfg, starting_balance=1000.0, storage=st)
+    m.open("ETH/USDT", 2000.0, 2000.0, funding_ts=1000)
+    pay = m.accrue_funding("ETH/USDT", rate=0.0001, funding_ts=2000)
+    assert pay == pytest.approx(0.02)
+    assert st.total_funding_collected() == pytest.approx(0.02)
+    payments = st.all_funding_payments()
+    assert len(payments) == 1
+    assert payments[0]["symbol"] == "ETH/USDT"
+    assert payments[0]["amount_usdt"] == pytest.approx(0.02)
+

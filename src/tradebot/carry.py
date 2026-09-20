@@ -23,6 +23,7 @@ from pathlib import Path
 from .config import CarryConfig, Config
 from .exchange import Exchange
 from .notifier import Notifier, NullNotifier
+from .storage import Storage
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +62,10 @@ class CarryPosition:
 class CarryManager:
     """Gestor del carry en modo PAPER (contabilidad sobre un balance simulado)."""
 
-    def __init__(self, cfg: CarryConfig, starting_balance: float):
+    def __init__(self, cfg: CarryConfig, starting_balance: float, storage: Storage | None = None):
         self.cfg = cfg
         self.balance = starting_balance          # efectivo (quote)
+        self.storage = storage
         self.positions: dict[str, CarryPosition] = {}
 
     # --- Decisiones ---------------------------------------------------------------
@@ -109,6 +111,17 @@ class CarryManager:
         pos.funding_collected += payment
         pos.last_funding_ts = funding_ts
         self.balance += payment
+        if self.storage is not None and payment != 0.0:
+            try:
+                self.storage.record_funding_payment(
+                    datetime.now(timezone.utc).isoformat(),
+                    symbol,
+                    rate,
+                    payment,
+                    pos.notional,
+                )
+            except Exception:
+                logger.exception("[CARRY] No pude registrar el pago de funding en SQLite")
         return payment
 
     def close(self, symbol: str, spot_price: float, perp_price: float) -> float:
@@ -136,11 +149,13 @@ class CarryRunner:
     daemon o suelto. NO ejecuta órdenes reales todavía (la ejecución de futuros
     llegará con las claves); lleva la contabilidad sobre un balance simulado."""
 
-    def __init__(self, config: Config, exchange: Exchange, notifier: Notifier | None = None):
+    def __init__(self, config: Config, exchange: Exchange, notifier: Notifier | None = None,
+                 storage: Storage | None = None):
         self.config = config
         self.cfg = config.carry
         self.exchange = exchange
         self.notifier = notifier or NullNotifier()
+        self.storage = storage
         self.mgr = self._build_manager()
         self._symbols = self.cfg.symbols or ["ETH/USDT", "XRP/USDT", "DOGE/USDT"]
         self._fut = None
@@ -149,7 +164,7 @@ class CarryRunner:
         """El MODO manda: en paper todo es paper; en live el carry va REAL.
         Sin doble confirmación: si el bot está en live, el carry también."""
         if self.config.mode != "live":
-            return CarryManager(self.cfg, self.config.risk.starting_balance)
+            return CarryManager(self.cfg, self.config.risk.starting_balance, storage=self.storage)
 
         from .carry_live import LiveCarryExecutor
         from .execution.futures import FuturesBroker
@@ -160,7 +175,7 @@ class CarryRunner:
         self.notifier.notify(
             f"⚙️ <b>CARRY futuros</b> arrancado en 🔴 REAL "
             f"(lev {self.cfg.leverage:g}x, tope {self.cfg.max_notional_usdt:.0f} USDT/pos)")
-        return LiveCarryExecutor(self.config, self.exchange, broker, self.notifier)
+        return LiveCarryExecutor(self.config, self.exchange, broker, self.notifier, storage=self.storage)
 
     def _futures(self):
         import ccxt
@@ -230,7 +245,10 @@ class CarryRunner:
                 "funding_collected": round(p.funding_collected, 4),
                 "opened_at": p.opened_at.isoformat() if hasattr(p.opened_at, "isoformat") else str(p.opened_at),
             })
-        total_funding = sum(p.funding_collected for p in self.mgr.positions.values())
+        if self.storage is not None:
+            total_funding = self.storage.total_funding_collected()
+        else:
+            total_funding = sum(p.funding_collected for p in self.mgr.positions.values())
         data = {
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "open_positions": len(positions_list),

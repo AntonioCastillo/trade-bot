@@ -100,16 +100,25 @@ def render_daily_report_telegram(engine: Engine, config: Config) -> str:
 
     # Extraer métricas de Carry Trade si está activo
     funding_total = 0.0
+    if engine.storage is not None:
+        try:
+            funding_total = engine.storage.total_funding_collected()
+        except Exception:
+            funding_total = 0.0
+
     carry_lines = []
     carry_runner = getattr(engine, "carry_runner", None)
     if carry_runner is not None and getattr(carry_runner, "mgr", None) is not None:
+        active_funding_sum = 0.0
         for cp in carry_runner.mgr.positions.values():
             f_col = getattr(cp, "funding_collected", 0.0)
-            funding_total += f_col
+            active_funding_sum += f_col
             carry_lines.append(
                 f"• <b>{cp.symbol}</b> (${getattr(cp, 'notional', 0.0):.2f})\n"
-                f"  Funding cobrado: <b>{f_col:+.4f} {quote}</b> (Delta-Neutral)"
+                f"  Funding cobrado activo: <b>{f_col:+.4f} {quote}</b> (Delta-Neutral)"
             )
+        if funding_total == 0.0 and active_funding_sum > 0.0:
+            funding_total = active_funding_sum
 
     net_realized = s["pnl_abs"] + funding_total
 
@@ -119,7 +128,7 @@ def render_daily_report_telegram(engine: Engine, config: Config) -> str:
         f"💰 <b>Patrimonio Total:</b> {eq_str}",
         f"💵 <b>Beneficio Neto Realizado:</b> <b>{net_realized:+.2f} {quote}</b>",
         f"   • Spot Realizado: {s['pnl_abs']:+.2f} {quote} ({s['trades']} ops, {s['win_rate']*100:.1f}% WR)",
-        f"   • Funding Carry Cobrado: {funding_total:+.4f} {quote}",
+        f"   • Funding Carry Histórico: {funding_total:+.4f} {quote}",
         f"🛡️ <b>Estado:</b> {'🟢 OPERANDO' if not engine.risk.halted else '🔴 DETENIDO (' + engine.risk.halted_reason + ')'}",
         "",
     ]
@@ -235,7 +244,7 @@ def _maybe_start_carry(config: Config, notifier: Notifier, engine: Engine | None
     Usa su propio cliente de exchange y su propio balance simulado."""
     if not config.carry.enabled:
         return None
-    runner = CarryRunner(config, Exchange(config), notifier)
+    runner = CarryRunner(config, Exchange(config), notifier, storage=engine.storage if engine else None)
     if engine is not None:
         engine.carry_runner = runner
     thread = threading.Thread(target=runner.run_forever, name="carry", daemon=True)

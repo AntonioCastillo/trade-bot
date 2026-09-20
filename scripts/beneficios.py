@@ -130,9 +130,97 @@ def main() -> None:
     else:
         storage = Storage(db_path)
         s = storage.summary()
+        funding_total = storage.total_funding_collected()
+        funding_payments = storage.all_funding_payments()
+        open_positions = storage.load_open_positions()
+        by_head = storage.summary_by("category")
+
+        # Intentar leer status.json para equity o posiciones de carry activas
+        status_file = Path("data/status_spot.json")
+        if not status_file.exists():
+            status_file = Path("data/status.json")
+        equity = 0.0
+        if status_file.exists():
+            try:
+                s_json = json.loads(status_file.read_text(encoding="utf-8"))
+                equity = s_json.get("equity", 0.0)
+            except Exception:
+                pass
+
+        carry_file = Path("data/carry_status_spot.json")
+        if not carry_file.exists():
+            carry_file = Path("data/carry_status.json")
+        carry_positions = []
+        if carry_file.exists():
+            try:
+                c_json = json.loads(carry_file.read_text(encoding="utf-8"))
+                carry_positions = c_json.get("positions", [])
+            except Exception:
+                pass
+
+        total_realized = s["pnl_abs"] + funding_total
+        quote = config.risk.quote_currency
+
         print(f"📊 Base de datos local: {db_path}")
-        print(f"• Trades cerrados: {s['trades']} (Win Rate: {s['win_rate']*100:.1f}%)")
-        print(f"• P&L Spot realizado: {s['pnl_abs']:+.2f} {config.risk.quote_currency}")
+        if equity:
+            print(f"💎 Patrimonio Total Cuenta: {equity:,.2f} {quote}\n")
+
+        print("┌" + "─" * 68 + "┐")
+        print("│ 💵 RESUMEN FINANCIERO CONSOLIDADO (LOCAL)                          │")
+        print("├" + "─" * 68 + "┤")
+        print(f"│ 1. Beneficio Realizado en Spot (Trading):  {s['pnl_abs']:+10.2f} {quote:<4} ({s['trades']} ops, {s['win_rate']*100:.1f}% WR) │")
+        print(f"│ 2. Funding Pasivo Cobrado (Carry Trade):   {funding_total:+10.4f} {quote:<4}                     │")
+        print(f"│ ────────────────────────────────────────────────────────────────── │")
+        print(f"│ ✅ TOTAL BENEFICIO REALIZADO EN CAJA:      {total_realized:+10.2f} {quote:<4}                     │")
+        print("└" + "─" * 68 + "┘")
+
+        # Desglose por cabeza
+        if by_head:
+            print("\n📊 RENDIMIENTO POR CABEZA:")
+            print(f"{'Cabeza':<22} {'Trades':<8} {'Wins':<6} {'Win Rate':<10} {'P&L USDT':<12}")
+            print("─" * 60)
+            for h in by_head:
+                t = int(h["trades"])
+                w = int(h["wins"] or 0)
+                wr = (w / t * 100) if t else 0
+                pnl = float(h["pnl_abs"] or 0.0)
+                print(f"{h['grp']:<22} {t:<8} {w:<6} {wr:>6.1f}%   {pnl:>+9.2f} {quote}")
+
+        # Historial de Cobros de Funding
+        if funding_payments:
+            print("\n💰 HISTORIAL DE PAGOS DE FUNDING COBRADOS (SQLite):")
+            print(f"{'Fecha (UTC)':<20} {'Símbolo':<12} {'Tasa 8h':<10} {'Cobrado':<14} {'Nocional':<12}")
+            print("─" * 70)
+            for fp in funding_payments[:20]:  # Mostrar los últimos 20
+                ts = fp["timestamp"][:19].replace("T", " ")
+                sym = fp["symbol"]
+                rate_pct = fp["rate"] * 100
+                amt = fp["amount_usdt"]
+                notional = fp["notional"]
+                print(f"{ts:<20} {sym:<12} {rate_pct:>+6.4f}%   {amt:>+9.4f} {quote}   ${notional:<8.2f}")
+            if len(funding_payments) > 20:
+                print(f"  ... y {len(funding_payments) - 20} cobros anteriores.")
+
+        # Posiciones Abiertas Carry
+        if carry_positions:
+            print("\n⚖️ POSICIONES CARRY ACTIVAS (Delta-Neutral):")
+            print(f"{'Símbolo':<12} {'Nocional':<14} {'Funding Cobrado':<18} {'Entrada Spot/Perp':<20}")
+            print("─" * 66)
+            for cp in carry_positions:
+                sym = cp.get("symbol", "n/d")
+                notional = cp.get("notional", 0.0)
+                f_col = cp.get("funding_collected", 0.0)
+                entry = cp.get("spot_entry", 0.0)
+                print(f"{sym:<12} ${notional:<12.2f} {f_col:>+10.4f} {quote}      @ {entry:.2f}")
+
+        # Posiciones Abiertas Spot
+        if open_positions:
+            print("\n🔓 POSICIONES SPOT EN CURSO:")
+            print(f"{'Símbolo':<12} {'Cabeza':<20} {'Entrada':<10} {'Stop Loss':<12} {'Take Profit':<12}")
+            print("─" * 70)
+            for op in open_positions:
+                print(f"{op.symbol:<12} {op.category:<20} {op.entry_price:<10.4f} {op.stop_loss:<12.4f} {op.take_profit:<12.4f}")
+
         storage.close()
 
     print("\n" + "═" * 70 + "\n")

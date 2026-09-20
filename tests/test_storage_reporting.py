@@ -50,3 +50,21 @@ def test_render_report_contains_sections():
 def test_render_report_empty():
     st = Storage(":memory:")
     assert "Todavía no hay operaciones" in render_report(st)
+
+
+def test_funding_payments_storage():
+    st = Storage(":memory:")
+    assert st.total_funding_collected() == 0.0
+    assert st.all_funding_payments() == []
+
+    st.record_funding_payment("2026-09-20T04:00:00Z", "ETH/USDT", 0.0001, 0.05, 500.0)
+    st.record_funding_payment("2026-09-20T12:00:00Z", "SOL/USDT", 0.0002, 0.04, 200.0)
+
+    assert st.total_funding_collected() == 0.09
+    payments = st.all_funding_payments()
+    assert len(payments) == 2
+    assert payments[0]["symbol"] == "SOL/USDT"  # ORDER BY id DESC
+    assert payments[0]["amount_usdt"] == 0.04
+    assert payments[1]["symbol"] == "ETH/USDT"
+    assert payments[1]["amount_usdt"] == 0.05
+

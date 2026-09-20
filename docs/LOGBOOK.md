@@ -6,7 +6,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ## 📌 Índice de Entradas
 
-* [2026-09-20 | Visibilidad de Beneficios de Funding y Dashboard Financiero (Commit Inmediato)](#2026-09-20--visibilidad-de-beneficios-de-funding-y-dashboard-financiero)
+* [2026-09-20 | Persistencia Histórica de Funding en SQLite y Dashboard Financiero (Commit Inmediato)](#2026-09-20--persistencia-histórica-de-funding-en-sqlite-y-dashboard-financiero)
 * [2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS (Commit `de8a166`)](#2026-09-20--optimización-y-consolidación-de-notificaciones-de-rotación-rs)
 * [2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML (Commit `f0d02d0`)](#2026-09-20--corrección-de-símbolos-duplicados-en-universo-yaml-commit-f0d02d0)
 * [2026-09-20 | Calibración de Parámetros de Producción (Commit `2cbc846`)](#2026-09-20--calibración-de-parámetros-de-producción-commit-2cbc846)
@@ -18,18 +18,24 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
-### 2026-09-20 | Visibilidad de Beneficios de Funding y Dashboard Financiero
+### 2026-09-20 | Persistencia Histórica de Funding en SQLite y Dashboard Financiero
 
-* **Archivos Afectados:** [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`scripts/beneficios.py`](../scripts/beneficios.py)
+* **Archivos Afectados:** [`src/tradebot/storage.py`](../src/tradebot/storage.py), [`src/tradebot/carry.py`](../src/tradebot/carry.py), [`src/tradebot/carry_live.py`](../src/tradebot/carry_live.py), [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`scripts/beneficios.py`](../scripts/beneficios.py)
 * **Motivo / Petición del Usuario:**
-  * Las ganancias pasivas del módulo Carry Trade (*funding rate*) estaban ocultas dentro del JSON del Gist y no aparecían de forma clara y unificada en los informes de Telegram ni en la consola.
+  * El usuario solicitó conocer con precisión cuánto beneficio ha generado el módulo de funding (Carry Trade) desde el inicio histórico del bot.
+  * *Causa técnica:* Anteriormente, el cobro de tasas de financiación (*funding rate*) se mantenía en memoria en los objetos `CarryPosition`. Al cerrarse una posición (como ocurrió con ETH) o al reiniciar el bot, los cobros históricos desaparecían del total acumulado en el Gist y en los resúmenes diarios.
 * **Cambios Implementados:**
-  1. **Informe Diario de Telegram (`render_daily_report_telegram`):** Ahora desglosa explícitamente:
-     - Beneficio Neto Total Realizado (Spot + Funding).
-     - Subtotal Spot (+61,18 USDT) y Subtotal Funding (+0,07 USDT).
-     - Sección específica de posiciones Carry Trade con su nocional y funding generado.
-  2. **Nuevo Script Dashboard (`scripts/beneficios.py`):** Permite consultar instantáneamente en terminal o vía `--gist` un resumen financiero completo con tablas de P&L realizado, funding, P&L flotante y rendimiento por cabeza.
-* **Resultado Esperado:** Visibilidad inmediata y consolidada del 100% de los beneficios en Telegram y terminal.
+  1. **Tabla de Pagos de Funding en SQLite (`storage.py`):**
+     - Se creó la tabla permanente `funding_payments` (`id`, `timestamp`, `symbol`, `rate`, `amount_usdt`, `notional`).
+     - Se implementaron métodos `record_funding_payment(...)`, `total_funding_collected()` y `all_funding_payments()`.
+  2. **Persistencia Automática en Tiempo Real (`carry.py` y `carry_live.py`):**
+     - Cada 8 horas (en los cortes de funding 04:00, 12:00 y 20:00 UTC), al producirse un devengo de financiación, se registra inmediatamente en SQLite de forma indeleble.
+     - `CarryRunner.write_status_file()` reporta `total_funding_collected` consultando la base de datos histórica, garantizando que el Gist y las estadísticas incluyan el 100% de las ganancias acumuladas pasadas y presentes.
+  3. **Informe Consolidado en Telegram (`daemon.py`):**
+     - `render_daily_report_telegram` ahora muestra el `Funding Carry Histórico` total sumado al P&L realizado en Spot para ofrecer el Beneficio Neto Realizado exacto en caja.
+  4. **Dashboard de Beneficios (`scripts/beneficios.py`):**
+     - `python scripts/beneficios.py` y `python scripts/beneficios.py --gist` muestran el desglose financiero completo, histórico de cobros individuales en BBDD, rendimiento por cabeza y posiciones activas.
+* **Resultado Esperado:** Trazabilidad contable total y permanente del 100% de las rentabilidades de funding generadas desde el inicio de la operativa.
 
 ---
 

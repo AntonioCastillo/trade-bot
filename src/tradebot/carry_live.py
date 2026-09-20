@@ -25,6 +25,7 @@ from .config import Config
 from .exchange import Exchange
 from .execution.futures import FuturesBroker
 from .notifier import Notifier, NullNotifier
+from .storage import Storage
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +54,13 @@ def _fill(result: dict, fallback_price: float, fallback_amount: float) -> tuple[
 
 class LiveCarryExecutor:
     def __init__(self, config: Config, spot: Exchange, broker: FuturesBroker,
-                 notifier: Notifier | None = None):
+                 notifier: Notifier | None = None, storage: Storage | None = None):
         self.config = config
         self.cfg = config.carry
         self.spot = spot
         self.broker = broker
         self.notifier = notifier or NullNotifier()
+        self.storage = storage
         self.dry_run = broker.dry_run
         self.positions: dict[str, LiveCarryPosition] = {}
         try:
@@ -190,13 +192,24 @@ class LiveCarryExecutor:
 
     def accrue_funding(self, symbol: str, rate: float, funding_ts: int) -> float:
         """En real el funding lo abona el exchange al monedero de futuros; aquí solo
-        se registra el importe esperado (informativo) para la notificación."""
+        se registra el importe esperado (informativo) para la notificación y SQLite."""
         pos = self.positions.get(symbol)
         if pos is None or funding_ts <= pos.last_funding_ts:
             return 0.0
         expected = rate * pos.notional
         pos.funding_collected += expected
         pos.last_funding_ts = funding_ts
+        if self.storage is not None and expected != 0.0:
+            try:
+                self.storage.record_funding_payment(
+                    datetime.now(timezone.utc).isoformat(),
+                    symbol,
+                    rate,
+                    expected,
+                    pos.notional,
+                )
+            except Exception:
+                logger.exception("[CARRY-LIVE] No pude registrar el pago de funding en SQLite")
         return expected
 
     def close(self, symbol: str, spot_price: float, perp_price: float) -> float:
