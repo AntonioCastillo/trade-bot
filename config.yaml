@@ -110,7 +110,7 @@ universe:
 
   # 🟢 Rejilla de Acumulación (Grid Trading en 4h con filtro ADX)
   - name: grid_lateral
-    symbols: [NEAR/USDT, LINK/USDT]
+    symbols: [NEAR/USDT, LINK/USDT, DOT/USDT, LTC/USDT]
     strategy: grid
     timeframe: 4h
     macro_btc_filter: true
@@ -151,7 +151,7 @@ risk:
   max_open_positions: 8         # capacidad para 4 posiciones direccionales + niveles de grid
   stop_loss_pct: 0.05
   take_profit_pct: 0.03
-  max_daily_loss_pct: 0.20      # cortafuegos diario
+  max_daily_loss_pct: 0.10      # cortafuegos diario (10%)
   max_account_drawdown_pct: 0.15 # disyuntor global de cuenta (cierre de emergencia al 15%)
   max_total_exposure_pct: 0.80   # reserva mínima del 20% en USDT líquido
 
@@ -170,7 +170,7 @@ carry:
   enabled: true
   symbols: [ETH/USDT, SOL/USDT]              # las 2 con más volumen de futuros en KuCoin
   notional_pct: 0.15                          # 15% del balance por posición (por pata)
-  min_annualized_pct: 5.0                     # abrir solo si funding anualizado > 5%
+  min_annualized_pct: 8.0                     # abrir solo si funding anualizado > 8%
   exit_annualized_pct: 0.0                    # cerrar si funding cae a negativo
   poll_interval_seconds: 300                  # chequear cada 5 min
   fee_pct: 0.0008                             # comisión aprox. por pata
