@@ -14,6 +14,7 @@ El resto del carry (decisiones, contabilidad) vive en carry.py / carry_live.py.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from ..config import Config
 
@@ -158,3 +159,46 @@ class FuturesBroker:
             "unrealized_pnl": float(p.get("unrealizedPnl") or 0.0),
             "collateral": float(p.get("collateral") or 0.0),
         }
+
+    def fetch_historical_funding_records(self, symbols: list[str] | None = None) -> list[dict]:
+        """Consulta en KuCoin Futuros el historial completo de pagos de funding de la cuenta."""
+        if self.dry_run:
+            return []
+        c = self._c()
+        target_symbols = symbols or ["SOLUSDTM", "ETHUSDTM", "XRPUSDTM", "DOGEUSDTM", "ADAUSDTM", "BTCUSDTM"]
+        all_records: list[dict] = []
+        for s in target_symbols:
+            sym_clean = s.replace("/USDT:USDT", "USDTM").replace("/USDT", "USDTM").replace(":", "")
+            if not sym_clean.endswith("M"):
+                sym_clean += "M"
+            spot_sym = sym_clean.replace("USDTM", "/USDT")
+            offset = None
+            while True:
+                params = {"symbol": sym_clean, "maxCount": 50}
+                if offset:
+                    params["offset"] = offset
+                try:
+                    res = c.futuresPrivateGetFundingHistory(params)
+                    data = (res or {}).get("data", {})
+                    list_data = data.get("dataList", [])
+                    if not list_data:
+                        break
+                    for r in list_data:
+                        all_records.append({
+                            "id": str(r.get("id")),
+                            "symbol": spot_sym,
+                            "timestamp": datetime.fromtimestamp(r["timePoint"] / 1000, tz=timezone.utc).isoformat(),
+                            "rate": float(r.get("fundingRate") or 0.0),
+                            "amount_usdt": float(r.get("funding") or 0.0),
+                            "notional": abs(float(r.get("positionCost") or 0.0)),
+                            "timePoint": r.get("timePoint", 0),
+                        })
+                    if not data.get("hasMore"):
+                        break
+                    offset = list_data[-1].get("id")
+                except Exception as e:
+                    logger.warning("[FUT] Error consultando historial de funding para %s: %s", sym_clean, e)
+                    break
+        all_records.sort(key=lambda x: x["timePoint"])
+        return all_records
+

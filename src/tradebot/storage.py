@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS state (
 
 CREATE TABLE IF NOT EXISTS funding_payments (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    payment_id    TEXT UNIQUE,
     timestamp     TEXT NOT NULL,
     symbol        TEXT NOT NULL,
     rate          REAL NOT NULL,
@@ -99,6 +100,14 @@ class Storage:
                 self._conn.execute(f"ALTER TABLE open_positions ADD COLUMN {col_name} {col_type}")
             except Exception:
                 pass
+        try:
+            self._conn.execute("ALTER TABLE funding_payments ADD COLUMN payment_id TEXT")
+        except Exception:
+            pass
+        try:
+            self._conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_funding_payments_payment_id ON funding_payments(payment_id)")
+        except Exception:
+            pass
         self._conn.commit()
 
     # --- Escritura -----------------------------------------------------------------
@@ -254,13 +263,22 @@ class Storage:
 
     # --- Pagos de Funding (Carry Trade) -------------------------------------------
 
-    def record_funding_payment(self, timestamp: str, symbol: str, rate: float, amount_usdt: float, notional: float) -> None:
-        """Registra un cobro periódico de tasa de financiación en SQLite."""
-        self._conn.execute(
-            "INSERT INTO funding_payments (timestamp, symbol, rate, amount_usdt, notional)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (timestamp, symbol, float(rate), float(amount_usdt), float(notional)),
-        )
+    def record_funding_payment(self, timestamp: str, symbol: str, rate: float,
+                               amount_usdt: float, notional: float,
+                               payment_id: str | None = None) -> None:
+        """Registra un cobro periódico de tasa de financiación en SQLite (evitando duplicados si se pasa payment_id)."""
+        if payment_id:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO funding_payments (payment_id, timestamp, symbol, rate, amount_usdt, notional)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (str(payment_id), timestamp, symbol, float(rate), float(amount_usdt), float(notional)),
+            )
+        else:
+            self._conn.execute(
+                "INSERT INTO funding_payments (timestamp, symbol, rate, amount_usdt, notional)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (timestamp, symbol, float(rate), float(amount_usdt), float(notional)),
+            )
         self._conn.commit()
 
     def total_funding_collected(self) -> float:

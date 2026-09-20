@@ -67,6 +67,34 @@ class LiveCarryExecutor:
             self.readopt_positions()
         except Exception:
             logger.exception("[CARRY-LIVE] No pude readoptar posiciones existentes al arrancar")
+        try:
+            self.sync_funding_history()
+        except Exception:
+            logger.exception("[CARRY-LIVE] No pude sincronizar el historial de funding al arrancar")
+
+    def sync_funding_history(self) -> None:
+        """Sincroniza y vuelca todos los cobros de funding históricos de KuCoin a SQLite."""
+        if self.dry_run or self.storage is None:
+            return
+        try:
+            records = self.broker.fetch_historical_funding_records()
+            count = 0
+            for r in records:
+                self.storage.record_funding_payment(
+                    timestamp=r["timestamp"],
+                    symbol=r["symbol"],
+                    rate=r["rate"],
+                    amount_usdt=r["amount_usdt"],
+                    notional=r["notional"],
+                    payment_id=r["id"],
+                )
+                count += 1
+            if count > 0:
+                total = self.storage.total_funding_collected()
+                logger.info("[CARRY-LIVE] Sincronizados %d registros históricos de funding. Total acumulado: %.4f USDT",
+                            count, total)
+        except Exception:
+            logger.exception("[CARRY-LIVE] Fallo al sincronizar el historial de funding desde KuCoin")
 
     def readopt_positions(self) -> None:
         """Sincroniza y readopta posiciones abiertas en KuCoin Futuros al arrancar o reiniciar."""

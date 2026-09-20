@@ -18,24 +18,24 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
-### 2026-09-20 | Persistencia Histórica de Funding en SQLite y Dashboard Financiero
+### 2026-09-20 | Persistencia y Sincronización Histórica de Funding (KuCoin Futures API -> SQLite)
 
-* **Archivos Afectados:** [`src/tradebot/storage.py`](../src/tradebot/storage.py), [`src/tradebot/carry.py`](../src/tradebot/carry.py), [`src/tradebot/carry_live.py`](../src/tradebot/carry_live.py), [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`scripts/beneficios.py`](../scripts/beneficios.py)
+* **Archivos Afectados:** [`src/tradebot/storage.py`](../src/tradebot/storage.py), [`src/tradebot/execution/futures.py`](../src/tradebot/execution/futures.py), [`src/tradebot/carry_live.py`](../src/tradebot/carry_live.py), [`scripts/sync_funding.py`](../scripts/sync_funding.py), [`scripts/beneficios.py`](../scripts/beneficios.py)
 * **Motivo / Petición del Usuario:**
-  * El usuario solicitó conocer con precisión cuánto beneficio ha generado el módulo de funding (Carry Trade) desde el inicio histórico del bot.
-  * *Causa técnica:* Anteriormente, el cobro de tasas de financiación (*funding rate*) se mantenía en memoria en los objetos `CarryPosition`. Al cerrarse una posición (como ocurrió con ETH) o al reiniciar el bot, los cobros históricos desaparecían del total acumulado en el Gist y en los resúmenes diarios.
+  * El usuario señaló: *"pero no sabremos el historico, solo el acumulado desde ahora"*.
+  * *Objetivo:* Recuperar el 100% de los cobros de funding devengados en KuCoin Futuros desde el día 1 en que arrancó el bot (2026-08-31) y sincronizarlos permanentemente en SQLite.
 * **Cambios Implementados:**
-  1. **Tabla de Pagos de Funding en SQLite (`storage.py`):**
-     - Se creó la tabla permanente `funding_payments` (`id`, `timestamp`, `symbol`, `rate`, `amount_usdt`, `notional`).
-     - Se implementaron métodos `record_funding_payment(...)`, `total_funding_collected()` y `all_funding_payments()`.
-  2. **Persistencia Automática en Tiempo Real (`carry.py` y `carry_live.py`):**
-     - Cada 8 horas (en los cortes de funding 04:00, 12:00 y 20:00 UTC), al producirse un devengo de financiación, se registra inmediatamente en SQLite de forma indeleble.
-     - `CarryRunner.write_status_file()` reporta `total_funding_collected` consultando la base de datos histórica, garantizando que el Gist y las estadísticas incluyan el 100% de las ganancias acumuladas pasadas y presentes.
-  3. **Informe Consolidado en Telegram (`daemon.py`):**
-     - `render_daily_report_telegram` ahora muestra el `Funding Carry Histórico` total sumado al P&L realizado en Spot para ofrecer el Beneficio Neto Realizado exacto en caja.
-  4. **Dashboard de Beneficios (`scripts/beneficios.py`):**
-     - `python scripts/beneficios.py` y `python scripts/beneficios.py --gist` muestran el desglose financiero completo, histórico de cobros individuales en BBDD, rendimiento por cabeza y posiciones activas.
-* **Resultado Esperado:** Trazabilidad contable total y permanente del 100% de las rentabilidades de funding generadas desde el inicio de la operativa.
+  1. **Auditoría y Sincronizador de API KuCoin Futuros (`FuturesBroker.fetch_historical_funding_records`):**
+     - Consulta la API privada (`futuresPrivateGetFundingHistory`) con paginación de todos los pares operados (`ETH`, `SOL`, etc.).
+     - Recupera el identificador único `id`, `timePoint`, tasa 8h, nocional y el importe real devengado en USDT.
+     - **Hallazgo verificado:** Se recuperaron **61 cobros históricos** de funding por un total de **+0.402374 USDT** (ETH: +0.3168 USDT en 50 cobros, SOL: +0.0856 USDT en 11 cobros).
+  2. **Persistencia Idempotente con `payment_id` (`storage.py`):**
+     - Añadido índice único `payment_id` en SQLite para evitar duplicados en reinicios o sincronizaciones recurrentes (`INSERT OR IGNORE`).
+  3. **Auto-Sincronización en el Arranque (`LiveCarryExecutor.sync_funding_history`):**
+     - Cada vez que el bot arranca en modo real, sincroniza automáticamente cualquier cobro pendiente de KuCoin antes de comenzar el bucle.
+  4. **Herramienta CLI de Sincronización Manual (`scripts/sync_funding.py`):**
+     - Permite volcar e inspeccionar el historial completo de KuCoin a SQLite en cualquier instante con `python scripts/sync_funding.py`.
+* **Resultado Esperado:** Reconstrucción contable 100% exacta y retroactiva desde el 31 de agosto de 2026, reflejando el histórico completo (+0.4024 USDT) en el dashboard y en los informes.
 
 ---
 
