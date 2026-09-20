@@ -98,19 +98,35 @@ def render_daily_report_telegram(engine: Engine, config: Config) -> str:
         equity = 0.0
         eq_str = "n/d"
 
+    # Extraer métricas de Carry Trade si está activo
+    funding_total = 0.0
+    carry_lines = []
+    carry_runner = getattr(engine, "carry_runner", None)
+    if carry_runner is not None and getattr(carry_runner, "mgr", None) is not None:
+        for cp in carry_runner.mgr.positions.values():
+            f_col = getattr(cp, "funding_collected", 0.0)
+            funding_total += f_col
+            carry_lines.append(
+                f"• <b>{cp.symbol}</b> (${getattr(cp, 'notional', 0.0):.2f})\n"
+                f"  Funding cobrado: <b>{f_col:+.4f} {quote}</b> (Delta-Neutral)"
+            )
+
+    net_realized = s["pnl_abs"] + funding_total
+
     lines = [
-        f"📊 <b>ESTADO DE LA HIDRA</b>",
-        f"━━━━━━━━━━━━━━━━━━━",
+        f"📊 <b>ESTADO GLOBAL DE LA CARTERA</b>",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"💰 <b>Patrimonio Total:</b> {eq_str}",
-        f"📈 <b>P&L Realizado:</b> {s['pnl_abs']:+.2f} {quote} (Win Rate: {s['win_rate']*100:.1f}%)",
-        f"🔢 <b>Operaciones cerradas:</b> {s['trades']}",
+        f"💵 <b>Beneficio Neto Realizado:</b> <b>{net_realized:+.2f} {quote}</b>",
+        f"   • Spot Realizado: {s['pnl_abs']:+.2f} {quote} ({s['trades']} ops, {s['win_rate']*100:.1f}% WR)",
+        f"   • Funding Carry Cobrado: {funding_total:+.4f} {quote}",
         f"🛡️ <b>Estado:</b> {'🟢 OPERANDO' if not engine.risk.halted else '🔴 DETENIDO (' + engine.risk.halted_reason + ')'}",
         "",
     ]
 
     # Posiciones abiertas desglosadas
     if engine.positions:
-        lines.append("🔓 <b>POSICIONES ABIERTAS:</b>")
+        lines.append("🔓 <b>POSICIONES ABIERTAS SPOT:</b>")
         for p in engine.positions:
             curr_p = engine.last_prices.get(p.symbol, p.entry_price)
             direction = 1 if p.side.value == "buy" else -1
@@ -127,7 +143,13 @@ def render_daily_report_telegram(engine: Engine, config: Config) -> str:
             )
         lines.append("")
     else:
-        lines.append("💤 <b>Posiciones abiertas:</b> 0 (100% USDT Líquido)\n")
+        lines.append("💤 <b>Posiciones Spot:</b> 0 (100% USDT Líquido)\n")
+
+    # Sección Carry Trade
+    if carry_lines:
+        lines.append("⚖️ <b>CARRY TRADE (Delta-Neutral):</b>")
+        lines.extend(carry_lines)
+        lines.append("")
 
     lines.append("🐲 <b>Cabezas Activas:</b>")
     lines.append(_heads_summary(config))

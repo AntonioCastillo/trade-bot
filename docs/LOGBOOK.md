@@ -6,7 +6,8 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ## 📌 Índice de Entradas
 
-* [2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS (Commit Inmediato)](#2026-09-20--optimización-y-consolidación-de-notificaciones-de-rotación-rs)
+* [2026-09-20 | Visibilidad de Beneficios de Funding y Dashboard Financiero (Commit Inmediato)](#2026-09-20--visibilidad-de-beneficios-de-funding-y-dashboard-financiero)
+* [2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS (Commit `de8a166`)](#2026-09-20--optimización-y-consolidación-de-notificaciones-de-rotación-rs)
 * [2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML (Commit `f0d02d0`)](#2026-09-20--corrección-de-símbolos-duplicados-en-universo-yaml-commit-f0d02d0)
 * [2026-09-20 | Calibración de Parámetros de Producción (Commit `2cbc846`)](#2026-09-20--calibración-de-parámetros-de-producción-commit-2cbc846)
 * [2026-09-18 | Notificaciones de Alerta Crítica en Telegram para Salidas Fallidas (Commit `b739165`)](#2026-09-18--notificaciones-de-alerta-crítica-en-telegram-para-salidas-fallidas-commit-b739165)
@@ -17,7 +18,22 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
-### 2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS
+### 2026-09-20 | Visibilidad de Beneficios de Funding y Dashboard Financiero
+
+* **Archivos Afectados:** [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`scripts/beneficios.py`](../scripts/beneficios.py)
+* **Motivo / Petición del Usuario:**
+  * Las ganancias pasivas del módulo Carry Trade (*funding rate*) estaban ocultas dentro del JSON del Gist y no aparecían de forma clara y unificada en los informes de Telegram ni en la consola.
+* **Cambios Implementados:**
+  1. **Informe Diario de Telegram (`render_daily_report_telegram`):** Ahora desglosa explícitamente:
+     - Beneficio Neto Total Realizado (Spot + Funding).
+     - Subtotal Spot (+61,18 USDT) y Subtotal Funding (+0,07 USDT).
+     - Sección específica de posiciones Carry Trade con su nocional y funding generado.
+  2. **Nuevo Script Dashboard (`scripts/beneficios.py`):** Permite consultar instantáneamente en terminal o vía `--gist` un resumen financiero completo con tablas de P&L realizado, funding, P&L flotante y rendimiento por cabeza.
+* **Resultado Esperado:** Visibilidad inmediata y consolidada del 100% de los beneficios en Telegram y terminal.
+
+---
+
+### 2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS (Commit `de8a166`)
 
 * **Archivos Afectados:** [`src/tradebot/daemon.py`](../src/tradebot/daemon.py)
 * **Motivo / Causa del Doble Mensaje al Arrancar:**
