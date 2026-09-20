@@ -1,4 +1,4 @@
-"""Estrategia de reversión a la media (RSI + Bandas de Bollinger).
+"""Estrategia de reversión a la media (RSI + Bandas de Bollinger) [LEGACY].
 
 Idea: los precios tienden a volver a su media. Compramos cuando el mercado
 está sobrevendido (RSI bajo y precio bajo la banda inferior). SOLO-LARGOS
@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .. import indicators
-from ..models import Signal, SignalType
-from .base import Strategy
+from ... import indicators
+from ...models import Signal, SignalType
+from ..base import Strategy
 
 
 class MeanReversionStrategy(Strategy):

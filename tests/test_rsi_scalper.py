@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from tradebot.models import SignalType
-from tradebot.strategy.rsi_scalper import RsiScalperStrategy
+from tradebot.strategy import RsiScalperStrategy
 
 
 def _df(prices):

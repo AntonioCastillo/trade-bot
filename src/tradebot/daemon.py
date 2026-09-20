@@ -26,10 +26,17 @@ from .factory import build_engine
 from .funding_radar import evaluate_funding_radar
 from .notifier import Notifier
 from .reporting import render_report
+from .scheduler import EventScheduler
 from .selfcheck import run_api_check
 from .status import write_status
 from .sniper import Sniper
 from .storage import Storage
+from .telegram_views import (
+    render_daily_report_telegram,
+    render_heads_summary,
+    render_rs_rotations,
+    render_welcome_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,20 +65,8 @@ def write_report_snapshot(
 
 
 def _heads_summary(config: Config) -> str:
-    """Lista legible de las cabezas activas (para el arranque y el heartbeat)."""
-    from collections import OrderedDict
-
-    groups: "OrderedDict[str, list[str]]" = OrderedDict()
-    for ins in config.instruments:
-        groups.setdefault(ins.category, []).append(ins.symbol.split("/")[0])
-    lines = [f"• {cat}: {', '.join(syms)}" for cat, syms in groups.items()]
-    if config.xsmom.enabled:
-        lines.append(f"• xsmom (momentum transversal, top-{config.xsmom.top_k})")
-    if config.sniper.enabled:
-        lines.append("• sniper (recién listadas)")
-    if config.carry.enabled:
-        lines.append("• carry (funding)")
-    return "\n".join(lines) if lines else "(ninguna)"
+    """Alias de compatibilidad hacia render_heads_summary."""
+    return render_heads_summary(config)
 
 
 def _maybe_start_sniper(config: Config, notifier: Notifier) -> threading.Thread | None:
@@ -86,85 +81,6 @@ def _maybe_start_sniper(config: Config, notifier: Notifier) -> threading.Thread 
     logger.info("Sniper lanzado en segundo plano (mismo proceso) | modo=%s",
                 "LIVE" if live else "PAPER")
     return thread
-
-
-def render_daily_report_telegram(engine: Engine, config: Config) -> str:
-    """Genera un informe diario claro y estructurado para Telegram."""
-    s = engine.storage.summary()
-    quote = config.risk.quote_currency
-    try:
-        equity = engine.equity()
-        eq_str = f"{equity:.2f} {quote}"
-    except Exception:
-        equity = 0.0
-        eq_str = "n/d"
-
-    # Extraer métricas de Carry Trade si está activo
-    funding_total = 0.0
-    if engine.storage is not None:
-        try:
-            funding_total = engine.storage.total_funding_collected()
-        except Exception:
-            funding_total = 0.0
-
-    carry_lines = []
-    carry_runner = getattr(engine, "carry_runner", None)
-    if carry_runner is not None and getattr(carry_runner, "mgr", None) is not None:
-        active_funding_sum = 0.0
-        for cp in carry_runner.mgr.positions.values():
-            f_col = getattr(cp, "funding_collected", 0.0)
-            active_funding_sum += f_col
-            carry_lines.append(
-                f"• <b>{cp.symbol}</b> (${getattr(cp, 'notional', 0.0):.2f})\n"
-                f"  Funding cobrado activo: <b>{f_col:+.4f} {quote}</b> (Delta-Neutral)"
-            )
-        if funding_total == 0.0 and active_funding_sum > 0.0:
-            funding_total = active_funding_sum
-
-    net_realized = s["pnl_abs"] + funding_total
-
-    lines = [
-        f"📊 <b>ESTADO GLOBAL DE LA CARTERA</b>",
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"💰 <b>Patrimonio Total:</b> {eq_str}",
-        f"💵 <b>Beneficio Neto Realizado:</b> <b>{net_realized:+.2f} {quote}</b>",
-        f"   • Spot Realizado: {s['pnl_abs']:+.2f} {quote} ({s['trades']} ops, {s['win_rate']*100:.1f}% WR)",
-        f"   • Funding Carry Histórico: {funding_total:+.4f} {quote}",
-        f"🛡️ <b>Estado:</b> {'🟢 OPERANDO' if not engine.risk.halted else '🔴 DETENIDO (' + engine.risk.halted_reason + ')'}",
-        "",
-    ]
-
-    # Posiciones abiertas desglosadas
-    if engine.positions:
-        lines.append("🔓 <b>POSICIONES ABIERTAS SPOT:</b>")
-        for p in engine.positions:
-            curr_p = engine.last_prices.get(p.symbol, p.entry_price)
-            direction = 1 if p.side.value == "buy" else -1
-            pnl_abs = (curr_p - p.entry_price) * p.amount * direction
-            pnl_pct = (pnl_abs / (p.entry_price * p.amount) * 100) if (p.entry_price * p.amount) else 0.0
-            tp_info = f"SL: {p.stop_loss:.4f} | TP: {p.take_profit:.4f}"
-            if p.partial_tp_done:
-                tp_info += " [TP1 COBRADO 50%]"
-            lines.append(
-                f"• <b>{p.symbol}</b> ({p.side.value.upper()})\n"
-                f"  Entrada: {p.entry_price:.4f} → Actual: {curr_p:.4f}\n"
-                f"  P&L: <b>{pnl_abs:+.2f} {quote} ({pnl_pct:+.2f}%)</b>\n"
-                f"  <i>{tp_info}</i>"
-            )
-        lines.append("")
-    else:
-        lines.append("💤 <b>Posiciones Spot:</b> 0 (100% USDT Líquido)\n")
-
-    # Sección Carry Trade
-    if carry_lines:
-        lines.append("⚖️ <b>CARRY TRADE (Delta-Neutral):</b>")
-        lines.extend(carry_lines)
-        lines.append("")
-
-    lines.append("🐲 <b>Cabezas Activas:</b>")
-    lines.append(_heads_summary(config))
-
-    return "\n".join(lines)
 
 
 def _maybe_evaluate_rs(engine: Engine, config: Config, notify: bool = True) -> None:
@@ -213,22 +129,7 @@ def _maybe_evaluate_rs(engine: Engine, config: Config, notify: bool = True) -> N
             logger.exception("[RS-ROTACION] Fallo al evaluar RS para la cabeza %s", cat_name)
 
     if notify and rotations:
-        if len(rotations) == 1:
-            rot = rotations[0]
-            engine.notifier.notify(
-                f"🔄 <b>ROTACIÓN RS EN VIVO</b> ({rot['category']})\n"
-                f"Nuevos símbolos activos: {', '.join(rot['new_syms'])}\n"
-                f"Símbolos anteriores: {', '.join(rot['old_syms'])}"
-            )
-        else:
-            lines = ["🔄 <b>ROTACIÓN DE FUERZA RELATIVA (RS vs BTC)</b>"]
-            for rot in rotations:
-                lines.append(
-                    f"\n• <b>{rot['category']}</b>\n"
-                    f"  Nuevos: {', '.join(rot['new_syms'])}\n"
-                    f"  Anteriores: {', '.join(rot['old_syms'])}"
-                )
-            engine.notifier.notify("\n".join(lines))
+        engine.notifier.notify(render_rs_rotations(rotations))
 
 
 def _notify_alive(engine: Engine, config: Config) -> None:
@@ -435,33 +336,29 @@ def run_forever(
 
     interval = config.engine.poll_interval_seconds
     report_interval = config.engine.report_interval_seconds
-    current_day = datetime.now(timezone.utc).date()
-    last_report = 0.0
-    last_alive = time.time()
+    scheduler = EventScheduler(
+        report_interval_seconds=report_interval,
+        alive_interval_seconds=config.engine.alive_interval_seconds,
+        error_notify_interval_seconds=config.engine.error_notify_interval_seconds,
+    )
     prev_halted = False
-    err_state = {"last": 0.0}
     last_closed: dict[str, object] = {}   # última vela CERRADA procesada por símbolo
 
     def _notify_fail(prefix: str, exc: Exception) -> None:
         """Avisa por Telegram de un fallo, con anti-spam por tiempo."""
-        now = time.time()
-        if now - err_state["last"] >= config.engine.error_notify_interval_seconds:
+        if scheduler.can_notify_error():
             engine.notifier.notify(f"⚠️ <b>Fallo</b> {prefix}\n{type(exc).__name__}: {exc}")
-            err_state["last"] = now
 
     logger.info(
         "Daemon iniciado | modo=%s | %d símbolos | ciclo=%ds | informe=%ds | log=%s",
         config.mode.upper(), len(symbols), interval, report_interval, log_file,
     )
     try:
-        balance_txt = f"{engine.equity():.2f} {config.risk.quote_currency}"
+        balance_val = engine.equity()
     except Exception:
-        balance_txt = "n/d (no se pudo leer)"
-    engine.notifier.notify(
-        f"🤖 <b>Bot iniciado</b> ({config.mode.upper()})\n"
-        f"<b>Cabezas activas:</b>\n{_heads_summary(config)}\n"
-        f"Ciclo {interval}s  |  Balance: {balance_txt}"
-    )
+        balance_val = None
+    engine.notifier.notify(render_welcome_message(config, equity=balance_val))
+
     _maybe_first_run_api_check(engine, config)
     _maybe_start_sniper(config, engine.notifier)
     _maybe_start_carry(config, engine.notifier, engine=engine)
@@ -488,8 +385,6 @@ def run_forever(
         logger.warning("No pude fijar el equity inicial para el cortafuegos diario")
 
     # Evaluación inicial de Fuerza Relativa (RS) y Radar de Funding en el arranque
-    now0 = datetime.now(timezone.utc)
-    last_rs_slot: tuple[object, int] = (now0.date(), now0.hour // 4)
     radar_cooldowns: dict[str, float] = {}
     try:
         _maybe_evaluate_rs(engine, config, notify=True)
@@ -508,9 +403,7 @@ def run_forever(
                 now = datetime.now(timezone.utc)
 
                 # Evaluación de Fuerza Relativa (RS) y Radar de Funding cada 4 Horas (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
-                rs_slot = (now.date(), now.hour // 4)
-                if rs_slot != last_rs_slot:
-                    last_rs_slot = rs_slot
+                if scheduler.check_4h_slot(now):
                     try:
                         logger.info("Evaluando Fuerza Relativa (RS) en slot 4H: %s %02dh UTC", now.date(), (now.hour // 4) * 4)
                         _maybe_evaluate_rs(engine, config)
@@ -523,10 +416,9 @@ def run_forever(
                         logger.exception("Fallo al evaluar Radar de Funding en cierre de 4H")
 
                 # Nuevo día UTC: reinicia el límite de pérdida diaria y envía el informe oficial.
-                if now.date() != current_day:
-                    current_day = now.date()
+                if scheduler.is_new_utc_day(now):
                     engine.risk.reset_day(engine.equity())
-                    logger.info("Nuevo día UTC (%s): cortafuegos diario reiniciado", current_day)
+                    logger.info("Nuevo día UTC (%s): cortafuegos diario reiniciado", scheduler.current_day)
                     try:
                         report_txt = render_daily_report_telegram(engine, config)
                         engine.notifier.notify(f"🌅 <b>INFORME DIARIO DE MEDIANOCHE (00:00 UTC)</b>\n\n{report_txt}")
@@ -576,12 +468,11 @@ def run_forever(
                 prev_halted = engine.risk.halted
 
                 # Señal de vida periódica a Telegram.
-                if time.time() - last_alive >= config.engine.alive_interval_seconds:
+                if scheduler.is_alive_due():
                     _notify_alive(engine, config)
-                    last_alive = time.time()
 
                 # Informe periódico a disco + resumen en el log.
-                if time.time() - last_report >= report_interval:
+                if scheduler.is_report_due():
                     write_report_snapshot(
                         engine.storage, config.risk.quote_currency, report_path,
                         config.risk.starting_balance,
@@ -597,7 +488,6 @@ def run_forever(
                         config.risk.quote_currency, engine.equity(),
                         "OPERANDO" if not engine.risk.halted else "DETENIDO (límite diario)",
                     )
-                    last_report = time.time()
 
             except Exception as exc:
                 # Cualquier fallo inesperado del bucle: log, avisa y seguimos vivos.

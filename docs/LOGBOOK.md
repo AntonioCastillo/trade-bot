@@ -4,7 +4,8 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
-* [2026-09-20 | Desmontaje de Carry Trade, Liberación de Liquidez y Radar de Funding >25% (Commit Inmediato)](#2026-09-20--desmontaje-de-carry-trade-liberación-de-liquidez-y-radar-de-funding-25)
+* [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 1: Daemon, CLI Unificada y Legacy Archive)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-1-daemon-cli-unificada-y-legacy-archive)
+* [2026-09-20 | Desmontaje de Carry Trade, Liberación de Liquidez y Radar de Funding >25% (Commit `ba39b8a`)](#2026-09-20--desmontaje-de-carry-trade-liberación-de-liquidez-y-radar-de-funding-25)
 * [2026-09-20 | Persistencia y Sincronización Histórica de Funding (KuCoin Futures API -> SQLite) (Commit `85ae9b1`)](#2026-09-20--persistencia-y-sincronización-histórica-de-funding-kucoin-futures-api---sqlite)
 * [2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS (Commit `de8a166`)](#2026-09-20--optimización-y-consolidación-de-notificaciones-de-rotación-rs)
 * [2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML (Commit `f0d02d0`)](#2026-09-20--corrección-de-símbolos-duplicados-en-universo-yaml-commit-f0d02d0)
@@ -14,6 +15,31 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-18 | Reconciliación de Saldo Real por Deducción de Comisiones Base (Commit `c13026b`)](#2026-09-18--reconciliación-de-saldo-real-por-deducción-de-comisiones-base-commit-c13026b)
 * [2026-09-18 | Documentación de Onboarding Cero Contexto (Commit `788f819`)](#2026-09-18--documentación-de-onboarding-cero-contexto-commit-788f819)
 * [2026-09-01 a 2026-09-16 | Hitos Fundacionales de la Arquitectura Hidra Multicabeza](#hitos-fundacionales-de-la-arquitectura-hidra-multicabeza)
+
+---
+
+### 2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 1: Daemon, CLI Unificada y Legacy Archive)
+
+* **Archivos Afectados:** [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`src/tradebot/telegram_views.py`](../src/tradebot/telegram_views.py), [`src/tradebot/scheduler.py`](../src/tradebot/scheduler.py), [`scripts/manage.py`](../scripts/manage.py), [`src/tradebot/strategy/legacy/`](../src/tradebot/strategy/legacy/), [`src/tradebot/strategy/__init__.py`](../src/tradebot/strategy/__init__.py), [`tests/test_scheduler.py`](../tests/test_scheduler.py), [`tests/test_telegram_views.py`](../tests/test_telegram_views.py)
+* **Motivo / Petición del Usuario:**
+  * El usuario solicitó simplificar y estructurar la arquitectura del bot (sin alterar lógica de negocio): *"analiza la estructura del codigo y del flujo para ver que mejoras podrias aplicar en pos de la claridad y simplicidad del proyecto"*, e indicó: *"empieza con los 3 primeros"*.
+* **Cambios Implementados:**
+  1. **Desacoplamiento de `daemon.py`:**
+     - Extracción de formateo HTML y plantillas de Telegram a [`src/tradebot/telegram_views.py`](../src/tradebot/telegram_views.py) (`render_daily_report_telegram`, `render_welcome_message`, `render_heads_summary`, `render_rs_rotations`).
+     - Creación de [`src/tradebot/scheduler.py`](../src/tradebot/scheduler.py) con `EventScheduler` para gestionar limpiamente cortes horarios (00:00 UTC, slots 4H, rate-limit de errores, intervalos de reporte y heartbeat).
+  2. **CLI Unificada `scripts/manage.py`:**
+     - Centralización de comandos operativos en un CLI único con subcomandos:
+       - `python scripts/manage.py status [--gist]`
+       - `python scripts/manage.py sync-funding`
+       - `python scripts/manage.py close-carry [--dry-run]`
+       - `python scripts/manage.py report [db_path]`
+       - `python scripts/manage.py verify-api [--usd USD] [--symbol SYMBOL]`
+       - `python scripts/manage.py backtest [--limit N] [--config PATH]`
+     - Mantiene 100% de compatibilidad regresiva con los scripts individuales existentes.
+  3. **Archivado de Estrategias Deprecadas (`src/tradebot/strategy/legacy/`):**
+     - Traslado de estrategias de scalping 1m/5m retiradas (`scalping.py`, `rsi_scalper.py`, `mean_reversion.py`) al submódulo `strategy.legacy`.
+     - Registro y re-exportación transparente en `src/tradebot/strategy/__init__.py` para preservar compatibilidad de backtests y tests existentes.
+* **Verificación:** 207 tests unitarios y de integración ejecutados y pasando al 100% (`207 passed`).
 
 ---
 

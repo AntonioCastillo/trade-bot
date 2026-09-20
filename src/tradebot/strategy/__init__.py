@@ -6,27 +6,27 @@ from typing import Any
 
 from .base import Strategy
 from .breakout import BreakoutStrategy
+from .capitulation import CapitulationStrategy
 from .grid import GridStrategy
-from .mean_reversion import MeanReversionStrategy
+from .legacy import MeanReversionStrategy, RsiScalperStrategy, ScalpingStrategy
 from .momentum import MomentumStrategy
-from .scalping import ScalpingStrategy
+from .range_reversion import RangeReversionStrategy
 from .trend import TrendStrategy
 from .volume_surge import VolumeSurgeStrategy
-from .capitulation import CapitulationStrategy
-from .range_reversion import RangeReversionStrategy
-from .rsi_scalper import RsiScalperStrategy
 
 _REGISTRY: dict[str, type[Strategy]] = {
-    "mean_reversion": MeanReversionStrategy,
-    "momentum": MomentumStrategy,
-    "volume_surge": VolumeSurgeStrategy,
-    "grid": GridStrategy,
-    "scalping": ScalpingStrategy,
+    # Estrategias Activas Hydra
     "breakout": BreakoutStrategy,
-    "trend": TrendStrategy,
     "capitulation": CapitulationStrategy,
+    "grid": GridStrategy,
+    "momentum": MomentumStrategy,
     "range_reversion": RangeReversionStrategy,
+    "trend": TrendStrategy,
+    "volume_surge": VolumeSurgeStrategy,
+    # Estrategias Archivadas (Legacy)
+    "mean_reversion": MeanReversionStrategy,
     "rsi_scalper": RsiScalperStrategy,
+    "scalping": ScalpingStrategy,
 }
 
 

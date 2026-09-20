@@ -1,4 +1,4 @@
-"""Scalping — entradas y salidas rápidas en marcos cortos (1m/5m).
+"""Scalping — entradas y salidas rápidas en marcos cortos (1m/5m) [LEGACY].
 
 Entra al cruce alcista de una EMA rápida sobre una lenta (impulso corto) y sale
 enseguida con TP/SL MUY ajustados (configurados en el instrumento). Solo-largos.
@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ..models import Signal, SignalType
-from .base import Strategy
+from ...models import Signal, SignalType
+from ..base import Strategy
 
 
 class ScalpingStrategy(Strategy):

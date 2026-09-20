@@ -2,7 +2,7 @@ from conftest import make_config, make_instrument
 
 from tradebot.backtester import run_backtest
 from tradebot.metrics import compute_metrics
-from tradebot.strategy.mean_reversion import MeanReversionStrategy
+from tradebot.strategy import MeanReversionStrategy
 
 
 def test_backtest_produces_closed_trade(price_series):

@@ -10,7 +10,7 @@ from tradebot.notifier import (
 )
 from tradebot.risk import RiskManager
 from tradebot.storage import Storage
-from tradebot.strategy.mean_reversion import MeanReversionStrategy
+from tradebot.strategy import MeanReversionStrategy
 
 
 class _Capture(NullNotifier):

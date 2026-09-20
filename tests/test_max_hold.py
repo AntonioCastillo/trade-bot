@@ -6,7 +6,7 @@ from tradebot.engine import Engine
 from tradebot.execution.paper import PaperExecutionEngine
 from tradebot.risk import RiskManager
 from tradebot.storage import Storage
-from tradebot.strategy.mean_reversion import MeanReversionStrategy
+from tradebot.strategy import MeanReversionStrategy
 
 
 def _df(prices):

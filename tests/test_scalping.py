@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from tradebot.models import SignalType
-from tradebot.strategy.scalping import ScalpingStrategy
+from tradebot.strategy import ScalpingStrategy
 
 
 def _df(prices):

@@ -1,4 +1,4 @@
-"""Estrategia de scalping rápido basada en sobreextensiones del RSI (7 periodos, 15m).
+"""Estrategia de scalping rápido basada en sobreextensiones del RSI (7 periodos, 15m) [LEGACY].
 
 Compra en sobreventa extrema (RSI <= 15) y vende en sobrecompra extrema (RSI >= 85)
 para rebotes y reversiones rápidas intradía.
@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .. import indicators
-from ..models import Signal, SignalType
-from .base import Strategy
+from ... import indicators
+from ...models import Signal, SignalType
+from ..base import Strategy
 
 
 class RsiScalperStrategy(Strategy):

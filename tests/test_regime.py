@@ -8,7 +8,7 @@ from tradebot.execution.paper import PaperExecutionEngine
 from tradebot.regime import RANGING, TRENDING, UNKNOWN, classify_regime
 from tradebot.risk import RiskManager
 from tradebot.storage import Storage
-from tradebot.strategy.mean_reversion import MeanReversionStrategy
+from tradebot.strategy import MeanReversionStrategy
 
 
 def _df(prices):

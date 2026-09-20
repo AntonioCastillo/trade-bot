@@ -1,5 +1,5 @@
 from tradebot.models import SignalType
-from tradebot.strategy.mean_reversion import MeanReversionStrategy
+from tradebot.strategy import MeanReversionStrategy
 
 
 def test_hold_when_not_enough_candles(price_series):
