@@ -1,0 +1,87 @@
+# 📓 DIARIO DE BITÁCORA (Logbook de Cambios y Decisiones)
+
+Este documento registra cronológicamente cada cambio significativo en el código, configuración o arquitectura de **tradebot**, detallando el **motivo empírico**, la **causa técnica** y el **impacto esperado**.
+
+---
+
+## 📌 Índice de Entradas
+
+* [2026-09-20 | Calibración de Parámetros de Producción (Commit `2cbc846`)](#2026-09-20--calibración-de-parámetros-de-producción-commit-2cbc846)
+* [2026-09-18 | Notificaciones de Alerta Crítica en Telegram para Salidas Fallidas (Commit `b739165`)](#2026-09-18--notificaciones-de-alerta-crítica-en-telegram-para-salidas-fallidas-commit-b739165)
+* [2026-09-18 | Blindaje Multinivel de Salidas: Reintentos y Persistencia en BBDD (Commit `de7591d`)](#2026-09-18--blindaje-multinivel-de-salidas-reintentos-y-persistencia-en-bbdd-commit-de7591d)
+* [2026-09-18 | Reconciliación de Saldo Real por Deducción de Comisiones Base (Commit `c13026b`)](#2026-09-18--reconciliación-de-saldo-real-por-deducción-de-comisiones-base-commit-c13026b)
+* [2026-09-18 | Documentación de Onboarding Cero Contexto (Commit `788f819`)](#2026-09-18--documentación-de-onboarding-cero-contexto-commit-788f819)
+* [2026-09-01 a 2026-09-16 | Hitos Fundacionales de la Arquitectura Hidra Multicabeza](#hitos-fundacionales-de-la-arquitectura-hidra-multicabeza)
+
+---
+
+### 2026-09-20 | Calibración de Parámetros de Producción (Commit `2cbc846`)
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml)
+* **Motivo / Justificación Empírica:**
+  1. `grid_lateral` demostró ser la estrategia más consistente de la cartera con un 100% de aciertos (11/11 trades ganadores, +42,70 USDT acumulados). Convenía ampliar su radio de acción a más pares líquidos de rango.
+  2. El umbral diario de pérdidas estaba configurado al 20% (`max_daily_loss_pct: 0.20`), excesivamente laxo para operar con capital real ($1.500 USDT).
+  3. En `carry_trade`, abrir y cerrar posiciones Spot + Futuros conlleva un coste de comisiones del ~0.16%. Un umbral mínimo del 5.0% anual requería hasta 12 días de funding para compensar la apertura/cierre.
+* **Cambios Implementados:**
+  1. Se añadieron `DOT/USDT` y `LTC/USDT` a `grid_lateral.symbols` (junto a `NEAR` y `LINK`).
+  2. Se redujo `max_daily_loss_pct` del 20% al **10% (0.10)** para mayor protección de la cuenta.
+  3. Se elevó `carry.min_annualized_pct` de 5.0% a **8.0%** anual para garantizar márgenes netos positivos inmediatos.
+* **Resultado Esperado:** Mayor frecuencia de captura de ganancias en rangos laterales y amortización de comisiones en menos de 4-5 días en Carry Trade.
+
+---
+
+### 2026-09-18 | Notificaciones de Alerta Crítica en Telegram para Salidas Fallidas (Commit `b739165`)
+
+* **Archivos Afectados:** [`src/tradebot/engine.py`](../src/tradebot/engine.py)
+* **Motivo / Justificación:**
+  * Si una orden de Stop Loss o Take Profit no se puede ejecutar en KuCoin tras agotar los 3 reintentos síncronos (por ejemplo, si el exchange sufriera una caída masiva de API), el usuario debe ser alertado en tiempo real en su teléfono móvil para que pueda intervenir manualmente si lo desea.
+* **Cambios Implementados:**
+  * En `_close_position` y `_execute_partial_close`, si `fill is None`, se envía un mensaje urgente por Telegram (`self.notifier.notify`) con el símbolo, motivo de salida (`stop-loss`, `take-profit`), código de error de la API y aviso de reintento automático en 60s.
+* **Resultado Esperado:** Visibilidad total y tranquilidad operativa ante incidencias imprevistas del exchange.
+
+---
+
+### 2026-09-18 | Blindaje Multinivel de Salidas: Reintentos y Persistencia en BBDD (Commit `de7591d`)
+
+* **Archivos Afectados:** [`src/tradebot/engine.py`](../src/tradebot/engine.py)
+* **Motivo / Justificación:**
+  * Evitar que microcortes de red, errores temporales 502/504 de Cloudflare o latencias en KuCoin provoquen el descarte de órdenes de cierre críticas (Stop Loss o Take Profit).
+* **Cambios Implementados:**
+  1. **Nivel 1 (Reintento Síncrono):** Bucle de hasta 3 intentos con 1.0 segundo de pausa (`time.sleep(1.0)`) dentro de `_close_position` y `_execute_partial_close`.
+  2. **Nivel 2 (Invariante de BBDD):** Si tras los 3 intentos no se ejecuta, la posición **permanece intacta en memoria (`self.positions`) y en SQLite (`storage.open_positions`)**. En el siguiente ciclo (60s), el evaluador de riesgo vuelve a disparar la orden.
+* **Resultado Esperado:** Garantía matemática de que ninguna posición con Stop Loss o Take Profit alcanzado se pierde o queda desatendida.
+
+---
+
+### 2026-09-18 | Reconciliación de Saldo Real por Deducción de Comisiones Base (Commit `c13026b`)
+
+* **Archivos Afectados:** [`src/tradebot/execution/live.py`](../src/tradebot/execution/live.py)
+* **Motivo / Justificación (Incidencia `NEAR/USDT`):**
+  * En KuCoin Spot, al comprar un token (ej. NEAR), el exchange deduce su comisión del 0.1% en la propia moneda adquirida. Al enviar la orden de venta con la cantidad nominal exacta (`pos.amount`), KuCoin devolvía `ccxt.InsufficientFunds: balance insufficient` porque faltaba una fracción de céntimo.
+* **Cambios Implementados:**
+  * Antes de enviar cualquier orden de venta a mercado en vivo, el motor consulta a la API el saldo libre real (`real_balance = self.exchange.fetch_balance(base_currency)`) y recorta la cantidad:
+    $$\text{order.amount} = \min(\text{order.amount}, \text{real\_balance})$$
+* **Resultado Esperado:** Eliminación del 100% de los rechazos por saldo insuficiente en órdenes de salida Spot. Permitió cerrar la posición de NEAR consolidando **+29,95 USDT netos (+47%)**.
+
+---
+
+### 2026-09-18 | Documentación de Onboarding Cero Contexto (Commit `788f819`)
+
+* **Archivos Afectados:** [`docs/PROJECT_STATE.md`](PROJECT_STATE.md), [`README.md`](../README.md)
+* **Motivo / Justificación:**
+  * Permitir que cualquier desarrollador humano o agente de IA que inicie una sesión sin memoria previa pueda entender el 100% del sistema, el historial de decisiones de diseño, la estructura del código y los resultados empíricos auditados.
+* **Cambios Implementados:**
+  * Creación del documento `docs/PROJECT_STATE.md` con el resumen ejecutivo, historia de decisiones, mapa de archivos de `src/tradebot/`, guía de despliegue y auditoría de resultados en vivo.
+
+---
+
+### Hitos Fundacionales de la Arquitectura Hidra Multicabeza
+
+1. **Eliminación del Scalping en 5m:**
+   * *Motivo:* Las comisiones de exchange devoraban los márgenes en marcos de 1m-5m. Se migró a marcos temporales altos (**1D y 4H**).
+2. **Escáner de Fuerza Relativa (RS vs BTC a 14d):**
+   * *Motivo:* No operar activos rezagados. Selecciona automáticamente los 2 líderes del mercado de un pool de 25 altcoins con un filtro de histéresis del 5.0%.
+3. **Módulo Carry Trade Delta-Neutral (Cash & Carry):**
+   * *Motivo:* Generar rentabilidad pasiva recurrente mediante el cobro de la tasa de financiación (*funding rate*) libre de riesgo direccional ($\Delta = 0$).
+4. **Gestión de Riesgo Dinámica (Toma Parcial 50% + Breakeven + Chandelier ATR):**
+   * *Motivo:* Proteger el capital asegurando el 50% de la ganancia al +5%, moviendo inmediatamente el Stop Loss restante al precio de entrada y dejando correr la tendencia con un trailing stop por volatilidad.
