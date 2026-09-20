@@ -64,7 +64,7 @@ def main() -> None:
         
         carry_info = inst.get("carry", {})
         funding_total = carry_info.get("total_funding_collected", 0.0)
-        carry_positions = carry_info.get("positions", [])
+        carry_positions = carry_info.get("positions", []) if inst.get("carry_enabled", True) else []
         
         open_positions = inst.get("open_positions", [])
         by_head = inst.get("by_head", [])

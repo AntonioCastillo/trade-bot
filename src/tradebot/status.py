@@ -180,6 +180,9 @@ def load_unified(data_dir: str = "data") -> dict:
         merge_sniper(data, str(d / f"sniper_status_{slot}.json"))
         merge_xsmom(data, str(d / f"xsmom_status_{slot}.json"))
         merge_carry(data, str(d / f"carry_status_{slot}.json"))
+        if not data.get("carry_enabled", True) and "carry" in data:
+            data["carry"]["open_positions"] = 0
+            data["carry"]["positions"] = []
         instances[slot] = data
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
