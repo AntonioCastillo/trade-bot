@@ -78,7 +78,15 @@ def build_status(engine, config) -> dict[str, Any]:
     open_positions: list[dict] = []
     try:
         for p in engine.positions:
-            curr_p = engine.last_prices.get(p.symbol, p.entry_price)
+            curr_p = engine.last_prices.get(p.symbol)
+            if curr_p is None and hasattr(engine, "exchange"):
+                try:
+                    curr_p = float(engine.exchange.fetch_last_price(p.symbol))
+                    engine.last_prices[p.symbol] = curr_p
+                except Exception:
+                    curr_p = p.entry_price
+            elif curr_p is None:
+                curr_p = p.entry_price
             pnl_abs = (curr_p - p.entry_price) * p.amount if p.side.value == "buy" else (p.entry_price - curr_p) * p.amount
             pnl_pct = (pnl_abs / (p.entry_price * p.amount)) * 100 if (p.entry_price * p.amount) else 0.0
             open_positions.append({
