@@ -6,7 +6,8 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ## 📌 Índice de Entradas
 
-* [2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML (Commit Inmediato)](#2026-09-20--corrección-de-símbolos-duplicados-en-universo-yaml)
+* [2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS (Commit Inmediato)](#2026-09-20--optimización-y-consolidación-de-notificaciones-de-rotación-rs)
+* [2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML (Commit `f0d02d0`)](#2026-09-20--corrección-de-símbolos-duplicados-en-universo-yaml-commit-f0d02d0)
 * [2026-09-20 | Calibración de Parámetros de Producción (Commit `2cbc846`)](#2026-09-20--calibración-de-parámetros-de-producción-commit-2cbc846)
 * [2026-09-18 | Notificaciones de Alerta Crítica en Telegram para Salidas Fallidas (Commit `b739165`)](#2026-09-18--notificaciones-de-alerta-crítica-en-telegram-para-salidas-fallidas-commit-b739165)
 * [2026-09-18 | Blindaje Multinivel de Salidas: Reintentos y Persistencia en BBDD (Commit `de7591d`)](#2026-09-18--blindaje-multinivel-de-salidas-reintentos-y-persistencia-en-bbdd-commit-de7591d)
@@ -16,7 +17,20 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
-### 2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML
+### 2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS
+
+* **Archivos Afectados:** [`src/tradebot/daemon.py`](../src/tradebot/daemon.py)
+* **Motivo / Causa del Doble Mensaje al Arrancar:**
+  * Al iniciar el bot, tanto `breakout_diario` como `momentum_diario` evaluaban RS por separado y detectaban que los símbolos de arranque (definidos por defecto en YAML como `SOL/AVAX` y `BNB/ADA`) diferían de los líderes reales calculados (`NEAR/INJ`).
+  * Esto provocaba que justo después del mensaje de `🤖 Bot iniciado` llegaran dos mensajes idénticos de rotación consecutivos (`🔄 ROTACIÓN RS EN VIVO (breakout_diario)` y `🔄 ROTACIÓN RS EN VIVO (momentum_diario)`).
+* **Cambios Implementados:**
+  1. Se reordenó la inicialización para evaluar RS de forma silenciosa (`notify=False`) **antes** de enviar el mensaje de `🤖 Bot iniciado`. De este modo, el mensaje de bienvenida ya muestra las cabezas con sus símbolos reales actualizados (`NEAR, INJ`).
+  2. En las evaluaciones periódicas de 4H durante la operativa en vivo, si múltiples cabezas rotan a la vez, se agrupan en un único mensaje consolidado y limpio.
+* **Resultado Esperado:** Un único mensaje claro al arrancar sin avisos redundantes.
+
+---
+
+### 2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML (Commit `f0d02d0`)
 
 * **Archivos Afectados:** [`config.yaml`](../config.yaml)
 * **Motivo / Causa Raíz del Bloqueo en Arranque:**

@@ -135,7 +135,7 @@ def render_daily_report_telegram(engine: Engine, config: Config) -> str:
     return "\n".join(lines)
 
 
-def _maybe_evaluate_rs(engine: Engine, config: Config) -> None:
+def _maybe_evaluate_rs(engine: Engine, config: Config, notify: bool = True) -> None:
     """Evalúa la Fuerza Relativa (RS vs BTC) para las cabezas que tengan dynamic_rs_enabled=True."""
     from collections import OrderedDict
     from .relative_strength import compute_rs_rankings, select_top_symbols
@@ -147,6 +147,8 @@ def _maybe_evaluate_rs(engine: Engine, config: Config) -> None:
 
     if not categories:
         return
+
+    rotations: list[dict[str, Any]] = []
 
     for cat_name, ins in categories.items():
         try:
@@ -167,13 +169,31 @@ def _maybe_evaluate_rs(engine: Engine, config: Config) -> None:
                     cat_name, new_syms, curr_syms
                 )
                 engine.update_head_symbols(cat_name, new_syms)
-                engine.notifier.notify(
-                    f"🔄 <b>ROTACIÓN RS EN VIVO</b> ({cat_name})\n"
-                    f"Nuevos símbolos activos: {', '.join(new_syms)}\n"
-                    f"Símbolos anteriores: {', '.join(curr_syms)}"
-                )
+                rotations.append({
+                    "category": cat_name,
+                    "new_syms": new_syms,
+                    "old_syms": curr_syms,
+                })
         except Exception:
             logger.exception("[RS-ROTACION] Fallo al evaluar RS para la cabeza %s", cat_name)
+
+    if notify and rotations:
+        if len(rotations) == 1:
+            rot = rotations[0]
+            engine.notifier.notify(
+                f"🔄 <b>ROTACIÓN RS EN VIVO</b> ({rot['category']})\n"
+                f"Nuevos símbolos activos: {', '.join(rot['new_syms'])}\n"
+                f"Símbolos anteriores: {', '.join(rot['old_syms'])}"
+            )
+        else:
+            lines = ["🔄 <b>ROTACIÓN DE FUERZA RELATIVA (RS vs BTC)</b>"]
+            for rot in rotations:
+                lines.append(
+                    f"\n• <b>{rot['category']}</b>\n"
+                    f"  Nuevos: {', '.join(rot['new_syms'])}\n"
+                    f"  Anteriores: {', '.join(rot['old_syms'])}"
+                )
+            engine.notifier.notify("\n".join(lines))
 
 
 def _notify_alive(engine: Engine, config: Config) -> None:
@@ -394,6 +414,15 @@ def run_forever(
             engine.notifier.notify(f"⚠️ <b>Fallo</b> {prefix}\n{type(exc).__name__}: {exc}")
             err_state["last"] = now
 
+    # Evaluación inicial de Fuerza Relativa (RS) en el arranque (silenciosa para no duplicar avisos)
+    now0 = datetime.now(timezone.utc)
+    last_rs_slot: tuple[object, int] = (now0.date(), now0.hour // 4)
+    try:
+        _maybe_evaluate_rs(engine, config, notify=False)
+        symbols = _validate_symbols(engine, config.symbols())
+    except Exception:
+        logger.warning("Fallo en la evaluación inicial de RS")
+
     logger.info(
         "Daemon iniciado | modo=%s | %d símbolos | ciclo=%ds | informe=%ds | log=%s",
         config.mode.upper(), len(symbols), interval, report_interval, log_file,
@@ -431,15 +460,6 @@ def run_forever(
         engine.risk.reset_day(eq0)
     except Exception:
         logger.warning("No pude fijar el equity inicial para el cortafuegos diario")
-
-    # Evaluación inicial de Fuerza Relativa (RS) en el arranque
-    now0 = datetime.now(timezone.utc)
-    last_rs_slot: tuple[object, int] = (now0.date(), now0.hour // 4)
-    try:
-        _maybe_evaluate_rs(engine, config)
-        symbols = _validate_symbols(engine, config.symbols())
-    except Exception:
-        logger.warning("Fallo en la evaluación inicial de RS")
 
     try:
         while True:
