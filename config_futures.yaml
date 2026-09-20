@@ -135,7 +135,9 @@ sniper:
   max_concurrent: 50
 
 carry:
-  enabled: true
+  enabled: false
+  funding_radar_enabled: true
+  radar_min_annualized_pct: 25.0
   symbols: [ETH/USDT, XRP/USDT, DOGE/USDT]
   notional_pct: 0.20
   min_annualized_pct: 30.0

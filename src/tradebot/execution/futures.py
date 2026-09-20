@@ -140,8 +140,8 @@ class FuturesBroker:
             return 0.0
 
     def fetch_position(self, symbol: str) -> dict | None:
-        """Posición actual normalizada, o None si no hay (o en dry-run)."""
-        if self.dry_run:
+        """Posición actual normalizada, o None si no hay (o sin credenciales en dry-run)."""
+        if self.dry_run and not self.config.credentials.is_complete:
             return None
         try:
             p = self._c().fetch_position(symbol)

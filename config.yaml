@@ -167,10 +167,12 @@ sniper:
   enabled: false
 
 carry:
-  enabled: true
+  enabled: false                              # DESACTIVADO: 100% liquidez asignada a Spot (mayor ROI)
+  funding_radar_enabled: true                 # RADAR ACTIVO: escanea tasas extremas e informa por Telegram
+  radar_min_annualized_pct: 25.0              # Notificar si el funding anualizado supera el 25% anual
   symbols: [ETH/USDT, SOL/USDT]              # las 2 con más volumen de futuros en KuCoin
   notional_pct: 0.15                          # 15% del balance por posición (por pata)
-  min_annualized_pct: 8.0                     # abrir solo si funding anualizado > 8%
+  min_annualized_pct: 25.0                    # umbral de apertura
   exit_annualized_pct: 0.0                    # cerrar si funding cae a negativo
   poll_interval_seconds: 300                  # chequear cada 5 min
   fee_pct: 0.0008                             # comisión aprox. por pata

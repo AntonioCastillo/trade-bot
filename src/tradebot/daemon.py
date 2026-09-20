@@ -23,6 +23,7 @@ from .config import Config, load_config
 from .engine import Engine
 from .exchange import Exchange
 from .factory import build_engine
+from .funding_radar import evaluate_funding_radar
 from .notifier import Notifier
 from .reporting import render_report
 from .selfcheck import run_api_check
@@ -486,9 +487,10 @@ def run_forever(
     except Exception:
         logger.warning("No pude fijar el equity inicial para el cortafuegos diario")
 
-    # Evaluación inicial de Fuerza Relativa (RS) en el arranque: envía 1 único mensaje consolidado
+    # Evaluación inicial de Fuerza Relativa (RS) y Radar de Funding en el arranque
     now0 = datetime.now(timezone.utc)
     last_rs_slot: tuple[object, int] = (now0.date(), now0.hour // 4)
+    radar_cooldowns: dict[str, float] = {}
     try:
         _maybe_evaluate_rs(engine, config, notify=True)
         symbols = _validate_symbols(engine, config.symbols())
@@ -496,11 +498,16 @@ def run_forever(
         logger.warning("Fallo en la evaluación inicial de RS")
 
     try:
+        evaluate_funding_radar(config, engine.exchange, engine.notifier, radar_cooldowns)
+    except Exception:
+        logger.warning("Fallo en el escaneo inicial del radar de funding")
+
+    try:
         while True:
             try:
                 now = datetime.now(timezone.utc)
 
-                # Evaluación de Fuerza Relativa (RS) cada 4 Horas (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+                # Evaluación de Fuerza Relativa (RS) y Radar de Funding cada 4 Horas (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
                 rs_slot = (now.date(), now.hour // 4)
                 if rs_slot != last_rs_slot:
                     last_rs_slot = rs_slot
@@ -510,6 +517,10 @@ def run_forever(
                         symbols = _validate_symbols(engine, config.symbols())
                     except Exception:
                         logger.exception("Fallo al evaluar RS en cierre de 4H")
+                    try:
+                        evaluate_funding_radar(config, engine.exchange, engine.notifier, radar_cooldowns)
+                    except Exception:
+                        logger.exception("Fallo al evaluar Radar de Funding en cierre de 4H")
 
                 # Nuevo día UTC: reinicia el límite de pérdida diaria y envía el informe oficial.
                 if now.date() != current_day:

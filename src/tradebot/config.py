@@ -64,6 +64,10 @@ class CarryConfig:
     leverage: float = 1.0             # apalancamiento de la pata corta (1x = liquidación lejísimos)
     max_notional_usdt: float = 50.0   # tope DURO de USDT por posición (por pata)
     liquidation_buffer_pct: float = 0.15  # cierre de emergencia si el precio queda a <15% de la liquidación
+    # --- Radar Informativo de Funding (>25% anual por defecto, solo alerta Telegram) ---
+    funding_radar_enabled: bool = True
+    radar_min_annualized_pct: float = 25.0
+    radar_symbols: list[str] = field(default_factory=list)
 
 
 @dataclass

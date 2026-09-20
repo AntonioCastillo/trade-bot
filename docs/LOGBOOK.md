@@ -4,9 +4,8 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
-## 📌 Índice de Entradas
-
-* [2026-09-20 | Persistencia Histórica de Funding en SQLite y Dashboard Financiero (Commit Inmediato)](#2026-09-20--persistencia-histórica-de-funding-en-sqlite-y-dashboard-financiero)
+* [2026-09-20 | Desmontaje de Carry Trade, Liberación de Liquidez y Radar de Funding >25% (Commit Inmediato)](#2026-09-20--desmontaje-de-carry-trade-liberación-de-liquidez-y-radar-de-funding-25)
+* [2026-09-20 | Persistencia y Sincronización Histórica de Funding (KuCoin Futures API -> SQLite) (Commit `85ae9b1`)](#2026-09-20--persistencia-y-sincronización-histórica-de-funding-kucoin-futures-api---sqlite)
 * [2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS (Commit `de8a166`)](#2026-09-20--optimización-y-consolidación-de-notificaciones-de-rotación-rs)
 * [2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML (Commit `f0d02d0`)](#2026-09-20--corrección-de-símbolos-duplicados-en-universo-yaml-commit-f0d02d0)
 * [2026-09-20 | Calibración de Parámetros de Producción (Commit `2cbc846`)](#2026-09-20--calibración-de-parámetros-de-producción-commit-2cbc846)
@@ -18,7 +17,27 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
-### 2026-09-20 | Persistencia y Sincronización Histórica de Funding (KuCoin Futures API -> SQLite)
+### 2026-09-20 | Desmontaje de Carry Trade, Liberación de Liquidez y Radar de Funding >25%
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml), [`config_futures.yaml`](../config_futures.yaml), [`src/tradebot/config.py`](../src/tradebot/config.py), [`src/tradebot/funding_radar.py`](../src/tradebot/funding_radar.py), [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`scripts/close_carry.py`](../scripts/close_carry.py)
+* **Motivo / Justificación Económica:**
+  * El usuario auditó el coste de oportunidad del Carry Trade: en 20 días solo generó +0.40 USDT con ~$240 USDT inmovilizados (~3.1% APR), mientras que las estrategias Spot (`grid_lateral`, `reversion_rango`) generaron más de +$55 USDT con 100% de aciertos (~260% APR).
+  * Se acordó desmontar las posiciones activas de futuros, liberar el 100% del capital para Spot y mantener un radar pasivo que alerte por Telegram solo ante anomalías extremas de funding (>25% anual).
+* **Cambios Implementados:**
+  1. **Desmontaje Seguro y Cierre en Vivo (`scripts/close_carry.py`):**
+     - Venta a mercado de 1.145 SOL en Spot por **+$124.05 USDT**.
+     - Recompra a mercado del corto de 11 contratos de SOL en Futuros, liberando **+$114.01 USDT** de colateral.
+     - **Liquidez total recuperada:** **+$238.06 USDT** netos de vuelta a la cuenta (saldo libre spot ascendió a 1.117,52 USDT).
+  2. **Desactivación de Operativa Automática de Carry:**
+     - `carry.enabled: false` en `config.yaml` y `config_futures.yaml`.
+  3. **Activación del Radar de Tasas Extremas (`funding_radar.py`):**
+     - Escanea los 15 principales contratos perpetuos en el arranque y en cada cierre de 4H.
+     - Emite alertas por Telegram si algún activo supera el **25.0% anual** ($> 0.0228\%$ por 8h), con un cooldown de 8 horas por símbolo para evitar duplicidad de mensajes.
+* **Resultado Esperado:** 0% exposición a derivados, 100% de capital maximizando el ROI en Spot, y vigilancia pasiva continua de oportunidades de financiación extraordinarias.
+
+---
+
+### 2026-09-20 | Persistencia y Sincronización Histórica de Funding (KuCoin Futures API -> SQLite) (Commit `85ae9b1`)
 
 * **Archivos Afectados:** [`src/tradebot/storage.py`](../src/tradebot/storage.py), [`src/tradebot/execution/futures.py`](../src/tradebot/execution/futures.py), [`src/tradebot/carry_live.py`](../src/tradebot/carry_live.py), [`scripts/sync_funding.py`](../scripts/sync_funding.py), [`scripts/beneficios.py`](../scripts/beneficios.py)
 * **Motivo / Petición del Usuario:**
