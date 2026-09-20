@@ -149,14 +149,17 @@ def _maybe_evaluate_rs(engine: Engine, config: Config, notify: bool = True) -> N
         return
 
     rotations: list[dict[str, Any]] = []
+    rankings_cache: dict[tuple, dict[str, float]] = {}
 
     for cat_name, ins in categories.items():
         try:
-            pool = ins.rs_pool or None
-            rankings = compute_rs_rankings(
-                engine.exchange, pool=pool, benchmark_symbol="BTC/USDT",
-                lookback_days=ins.rs_lookback_days, timeframe="1d"
-            )
+            pool = tuple(ins.rs_pool) if ins.rs_pool else ()
+            if pool not in rankings_cache:
+                rankings_cache[pool] = compute_rs_rankings(
+                    engine.exchange, pool=ins.rs_pool or None, benchmark_symbol="BTC/USDT",
+                    lookback_days=ins.rs_lookback_days, timeframe="1d"
+                )
+            rankings = rankings_cache[pool]
             if not rankings:
                 continue
             curr_syms = [i.symbol for i in config.instruments if i.category == cat_name]
@@ -414,15 +417,6 @@ def run_forever(
             engine.notifier.notify(f"⚠️ <b>Fallo</b> {prefix}\n{type(exc).__name__}: {exc}")
             err_state["last"] = now
 
-    # Evaluación inicial de Fuerza Relativa (RS) en el arranque (silenciosa para no duplicar avisos)
-    now0 = datetime.now(timezone.utc)
-    last_rs_slot: tuple[object, int] = (now0.date(), now0.hour // 4)
-    try:
-        _maybe_evaluate_rs(engine, config, notify=False)
-        symbols = _validate_symbols(engine, config.symbols())
-    except Exception:
-        logger.warning("Fallo en la evaluación inicial de RS")
-
     logger.info(
         "Daemon iniciado | modo=%s | %d símbolos | ciclo=%ds | informe=%ds | log=%s",
         config.mode.upper(), len(symbols), interval, report_interval, log_file,
@@ -460,6 +454,15 @@ def run_forever(
         engine.risk.reset_day(eq0)
     except Exception:
         logger.warning("No pude fijar el equity inicial para el cortafuegos diario")
+
+    # Evaluación inicial de Fuerza Relativa (RS) en el arranque: envía 1 único mensaje consolidado
+    now0 = datetime.now(timezone.utc)
+    last_rs_slot: tuple[object, int] = (now0.date(), now0.hour // 4)
+    try:
+        _maybe_evaluate_rs(engine, config, notify=True)
+        symbols = _validate_symbols(engine, config.symbols())
+    except Exception:
+        logger.warning("Fallo en la evaluación inicial de RS")
 
     try:
         while True:
