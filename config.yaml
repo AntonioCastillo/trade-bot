@@ -89,7 +89,7 @@ universe:
 
   # 🟢 Rango Lateral (Reversión a la media en Bollinger con filtro ADX <= 25)
   - name: reversion_rango
-    symbols: [LTC/USDT, DOT/USDT, ATOM/USDT]
+    symbols: [ATOM/USDT, ALGO/USDT, ETC/USDT]
     strategy: range_reversion
     timeframe: 4h
     macro_btc_filter: true

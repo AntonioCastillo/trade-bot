@@ -6,12 +6,27 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ## 📌 Índice de Entradas
 
+* [2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML (Commit Inmediato)](#2026-09-20--corrección-de-símbolos-duplicados-en-universo-yaml)
 * [2026-09-20 | Calibración de Parámetros de Producción (Commit `2cbc846`)](#2026-09-20--calibración-de-parámetros-de-producción-commit-2cbc846)
 * [2026-09-18 | Notificaciones de Alerta Crítica en Telegram para Salidas Fallidas (Commit `b739165`)](#2026-09-18--notificaciones-de-alerta-crítica-en-telegram-para-salidas-fallidas-commit-b739165)
 * [2026-09-18 | Blindaje Multinivel de Salidas: Reintentos y Persistencia en BBDD (Commit `de7591d`)](#2026-09-18--blindaje-multinivel-de-salidas-reintentos-y-persistencia-en-bbdd-commit-de7591d)
 * [2026-09-18 | Reconciliación de Saldo Real por Deducción de Comisiones Base (Commit `c13026b`)](#2026-09-18--reconciliación-de-saldo-real-por-deducción-de-comisiones-base-commit-c13026b)
 * [2026-09-18 | Documentación de Onboarding Cero Contexto (Commit `788f819`)](#2026-09-18--documentación-de-onboarding-cero-contexto-commit-788f819)
 * [2026-09-01 a 2026-09-16 | Hitos Fundacionales de la Arquitectura Hidra Multicabeza](#hitos-fundacionales-de-la-arquitectura-hidra-multicabeza)
+
+---
+
+### 2026-09-20 | Corrección de Símbolos Duplicados en Universo YAML
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml)
+* **Motivo / Causa Raíz del Bloqueo en Arranque:**
+  * Al añadir `DOT/USDT` y `LTC/USDT` a `grid_lateral`, dichos pares quedaron duplicados porque ya existían en `reversion_rango`.
+  * La función `_build_instruments()` en [`src/tradebot/config.py`](../src/tradebot/config.py#L225) incluye una validación de seguridad estricta (`ValueError: Símbolo duplicado en el universo: DOT/USDT`) para evitar que dos cabezas emitan órdenes contradictorias sobre un mismo activo.
+  * Como consecuencia, el bot abortaba el proceso de carga de configuración antes de inicializar el bucle `daemon.py` (y por tanto, antes de poder enviar el mensaje de `🤖 Bot iniciado` a Telegram).
+* **Cambios Implementados:**
+  * Se actualizaron los símbolos de `reversion_rango` a `[ATOM/USDT, ALGO/USDT, ETC/USDT]`, dejando `[NEAR/USDT, LINK/USDT, DOT/USDT, LTC/USDT]` en exclusiva para `grid_lateral`.
+  * Universo validado al 100% con 17 símbolos únicos sin colisiones.
+* **Resultado Esperado:** Arranque limpio inmediato y envío correcto de la notificación de bienvenida en Telegram.
 
 ---
 
