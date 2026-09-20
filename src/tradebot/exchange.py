@@ -6,7 +6,9 @@ falta credenciales; sólo se usan al enviar órdenes reales (modo live).
 
 from __future__ import annotations
 
+import functools
 import logging
+import random
 import time
 
 import pandas as pd
@@ -16,6 +18,73 @@ from .config import Config
 logger = logging.getLogger(__name__)
 
 OHLCV_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
+
+
+def with_network_retry(
+    func=None,
+    *,
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    backoff: float = 2.0,
+    jitter: bool = True,
+):
+    """Decorador para reintentar operaciones de red transitorias con exponential backoff y jitter.
+
+    Captura errores de red y rate limits (ccxt.NetworkError, ccxt.RateLimitExceeded,
+    ConnectionError, etc.) y reintenta con backoff. Propaga inmediatamente errores fatales
+    (ccxt.AuthenticationError, ccxt.InsufficientFunds, ccxt.InvalidOrder, etc.).
+    """
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                import ccxt
+                fatal_exceptions = (
+                    ccxt.AuthenticationError,
+                    ccxt.InsufficientFunds,
+                    ccxt.InvalidOrder,
+                    ccxt.BadSymbol,
+                    ccxt.OrderNotFound,
+                )
+                retryable_exceptions = (
+                    ccxt.NetworkError,
+                    ccxt.RateLimitExceeded,
+                    ccxt.ExchangeNotAvailable,
+                    ccxt.RequestTimeout,
+                    ccxt.DDoSProtection,
+                    ConnectionError,
+                    TimeoutError,
+                    OSError,
+                )
+            except ImportError:
+                fatal_exceptions = ()
+                retryable_exceptions = (ConnectionError, TimeoutError, OSError)
+
+            delay = initial_delay
+            for attempt in range(1, max_retries + 1):
+                try:
+                    return fn(*args, **kwargs)
+                except fatal_exceptions:
+                    raise
+                except retryable_exceptions as exc:
+                    if attempt == max_retries:
+                        logger.error(
+                            "Fallo definitivo tras %d intentos en %s: %s",
+                            max_retries, fn.__name__, exc,
+                        )
+                        raise
+                    sleep_time = delay * (1 + random.uniform(0, 0.25) if jitter else 1.0)
+                    logger.warning(
+                        "[REINTENTO %d/%d] Error transitorio en %s (%s). Esperando %.2fs...",
+                        attempt, max_retries, fn.__name__, exc, sleep_time,
+                    )
+                    time.sleep(sleep_time)
+                    delay *= backoff
+        return wrapper
+
+    if func is not None:
+        return decorator(func)
+    return decorator
 
 
 class Exchange:
@@ -60,6 +129,7 @@ class Exchange:
             return f"{symbol}:USDT"
         return symbol
 
+    @with_network_retry
     def market_symbols(self) -> set[str]:
         """Conjunto de símbolos que el exchange ofrece realmente."""
         self._client.load_markets()
@@ -73,6 +143,7 @@ class Exchange:
             return normalized
         return symbols
 
+    @with_network_retry
     def fetch_ohlcv(
         self, symbol: str, timeframe: str, limit: int = 200
     ) -> pd.DataFrame:
@@ -84,6 +155,7 @@ class Exchange:
         df = df.set_index("timestamp")
         return df
 
+    @with_network_retry
     def fetch_ohlcv_history(
         self, symbol: str, timeframe: str, total: int
     ) -> pd.DataFrame:
@@ -114,6 +186,7 @@ class Exchange:
         df = df.set_index("timestamp").sort_index()
         return df.tail(total)
 
+    @with_network_retry
     def fetch_funding_history(self, symbol: str, total: int = 1095) -> list[dict]:
         """Histórico de funding rates del perpetuo (KuCoin futures), paginado.
         `symbol` en formato unificado ccxt, p.ej. 'BTC/USDT:USDT'. Público."""
@@ -142,6 +215,7 @@ class Exchange:
                 out.append(r)
         return out[-total:]
 
+    @with_network_retry
     def fetch_last_price(self, symbol: str) -> float:
         """Último precio. Una recién listada puede no tener 'last' aún (sin trades):
         cae a close/bid/ask y, si tampoco hay, lanza ValueError limpio (no TypeError
@@ -154,11 +228,13 @@ class Exchange:
             raise ValueError(f"{symbol}: sin precio disponible todavía (recién listada)")
         return float(price)
 
+    @with_network_retry
     def fetch_balance(self, currency: str) -> float:
         """Saldo libre de una moneda. Requiere credenciales (modo live)."""
         balance = self._client.fetch_balance()
         return float(balance.get("free", {}).get(currency, 0.0))
 
+    @with_network_retry
     def fetch_balances_total(self) -> dict[str, float]:
         """Saldo TOTAL (libre + bloqueado) por moneda. Para reconciliar posiciones
         readoptadas contra lo que de verdad hay en la cuenta."""
@@ -168,6 +244,7 @@ class Exchange:
 
     # --- Metadatos de mercado (límites y precisión) --------------------------------
 
+    @with_network_retry
     def market_limits(self, symbol: str) -> dict:
         """Devuelve mínimos de coste (quote) y cantidad (base) del par."""
         symbol = self._normalize_symbol(symbol)
@@ -179,6 +256,7 @@ class Exchange:
             "min_amount": (limits.get("amount") or {}).get("min"),
         }
 
+    @with_network_retry
     def amount_to_precision(self, symbol: str, amount: float) -> float:
         symbol = self._normalize_symbol(symbol)
         self._client.load_markets()
@@ -231,11 +309,13 @@ class Exchange:
         order = self._client.create_order(symbol, "market", "sell", amount)
         return self._await_fill(order, symbol)
 
+    @with_network_retry
     def contract_size(self, symbol: str) -> float:
         symbol = self._normalize_symbol(symbol)
         self._client.load_markets()
         return float(self._client.market(symbol).get("contractSize") or 1.0)
 
+    @with_network_retry
     def contracts_for_notional(self, symbol: str, notional: float, price: float) -> float:
         symbol = self._normalize_symbol(symbol)
         if price <= 0:
@@ -263,3 +343,10 @@ class Exchange:
             {"leverage": leverage, "marginMode": "isolated"}
         )
         return self._await_fill(order, symbol)
+
+
+__all__ = [
+    "Exchange",
+    "OHLCV_COLUMNS",
+    "with_network_retry",
+]

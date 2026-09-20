@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from ..config import Config
 from ..exchange import Exchange
-from .base import ExecutionEngine
+from .base import ExecutionEngine, OrderRejected
+from .futures import FuturesBroker
 from .live import LiveExecutionEngine
 from .paper import PaperExecutionEngine
 
@@ -17,7 +18,9 @@ def build_execution_engine(config: Config, exchange: Exchange) -> ExecutionEngin
 
 __all__ = [
     "ExecutionEngine",
+    "OrderRejected",
     "PaperExecutionEngine",
     "LiveExecutionEngine",
+    "FuturesBroker",
     "build_execution_engine",
 ]

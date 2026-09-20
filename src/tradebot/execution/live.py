@@ -16,12 +16,12 @@ import logging
 from ..config import Config
 from ..exchange import Exchange
 from ..models import Fill, Order, Side
-from .base import OrderRejected
+from .base import ExecutionEngine, OrderRejected
 
 logger = logging.getLogger(__name__)
 
 
-class LiveExecutionEngine:
+class LiveExecutionEngine(ExecutionEngine):
     def __init__(self, config: Config, exchange: Exchange):
         self.config = config
         self.exchange = exchange

@@ -4,8 +4,27 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 1: Daemon, CLI Unificada y Legacy Archive) (Commit `313c289`)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-1-daemon-cli-unificada-y-legacy-archive)
+
+---
+
+### 2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)
+
+* **Archivos Afectados:** [`src/tradebot/execution/base.py`](../src/tradebot/execution/base.py), [`src/tradebot/execution/paper.py`](../src/tradebot/execution/paper.py), [`src/tradebot/execution/live.py`](../src/tradebot/execution/live.py), [`src/tradebot/execution/__init__.py`](../src/tradebot/execution/__init__.py), [`src/tradebot/exchange.py`](../src/tradebot/exchange.py), [`tests/test_execution_hierarchy.py`](../tests/test_execution_hierarchy.py), [`tests/test_exchange_resilience.py`](../tests/test_exchange_resilience.py)
+* **Motivo / Petición del Usuario:**
+  * El usuario instruyó continuar con los dos bloques finales: *"adelante con 6 y 7"*.
+* **Cambios Implementados:**
+  1. **Jerarquía Unificada de Ejecución (`tradebot.execution`):**
+     - Consolidación formal de la clase base abstracta `ExecutionEngine(ABC)` con interfaz estándar (`execute`, `get_balance`, `cancel_order`, `fetch_open_orders`).
+     - `PaperExecutionEngine` y `LiveExecutionEngine` heredan explícitamente de `ExecutionEngine`, asegurando contratos consistentes en simulado y en vivo.
+     - Centralización de exportaciones en `src/tradebot/execution/__init__.py` (`ExecutionEngine`, `OrderRejected`, `PaperExecutionEngine`, `LiveExecutionEngine`, `FuturesBroker`, `build_execution_engine`).
+  2. **Capa de Resiliencia de Red y Reintentos (`tradebot.exchange`):**
+     - Implementación del decorador `with_network_retry` con *exponential backoff* y *jitter* para mitigar cortes de red transitorios y *rate limits* de KuCoin (`ccxt.NetworkError`, `ccxt.RateLimitExceeded`, `ConnectionError`, `TimeoutError`, `OSError`).
+     - Discriminación estricta de errores: propagación instantánea sin reintento de fallos fatales de autenticación, saldo u orden inválida (`ccxt.AuthenticationError`, `ccxt.InsufficientFunds`, `ccxt.InvalidOrder`, `ccxt.BadSymbol`).
+     - Blindaje de todas las operaciones de lectura, descarga de velas y metadatos de mercado (`fetch_ohlcv`, `fetch_ohlcv_history`, `fetch_funding_history`, `fetch_last_price`, `fetch_balance`, `fetch_balances_total`, `market_limits`, `amount_to_precision`, `contract_size`, `contracts_for_notional`).
+* **Verificación:** 223 tests unitarios y de integración ejecutados y pasando al 100% (`223 passed`).
 * [2026-09-20 | Desmontaje de Carry Trade, Liberación de Liquidez y Radar de Funding >25% (Commit `ba39b8a`)](#2026-09-20--desmontaje-de-carry-trade-liberación-de-liquidez-y-radar-de-funding-25)
 * [2026-09-20 | Persistencia y Sincronización Histórica de Funding (KuCoin Futures API -> SQLite) (Commit `85ae9b1`)](#2026-09-20--persistencia-y-sincronización-histórica-de-funding-kucoin-futures-api---sqlite)
 * [2026-09-20 | Optimización y Consolidación de Notificaciones de Rotación RS (Commit `de8a166`)](#2026-09-20--optimización-y-consolidación-de-notificaciones-de-rotación-rs)

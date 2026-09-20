@@ -23,3 +23,11 @@ class ExecutionEngine(ABC):
     def get_balance(self) -> float:
         """Saldo disponible en la moneda de cotización (p.ej. USDT)."""
         raise NotImplementedError
+
+    def cancel_order(self, order_id: str, symbol: str) -> bool:
+        """Cancela una orden activa si el motor lo soporta."""
+        return False
+
+    def fetch_open_orders(self, symbol: str | None = None) -> list[Order]:
+        """Lista órdenes abiertas pendientes de ejecución."""
+        return []
