@@ -4,8 +4,23 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml), [`config_futures.yaml`](../config_futures.yaml)
+* **Motivo / Justificación Empírica:**
+  * `grid_lateral` demostró una efectividad histórica impecable (**13 operaciones ganadoras de 13 cerradas, 100% Win Rate, +$46.43 USDT netos**).
+  * El análisis de ejecución real reveló que el 100% de los trades se resolvieron en el 1º o 2º peldaño en cuestión de 2 a 4 horas.
+  * El dimensionamiento original del 6% (`position_size_pct: 0.06`, ~$103 USDT) diseñado para aguantar 5 peldaños dejaba el 94% del capital ocioso en cuenta.
+* **Cambios Implementados:**
+  1. Se aumentó `position_size_pct` de 0.06 a **0.12 (12% por peldaño, ~$207 USDT)**.
+  2. Se redujo `max_concurrent_per_symbol` de 5 a **3 peldaños máximos**.
+* **Impacto Esperado:** Duplicar el rendimiento neto en dólares por cada ciclo de oscilación (de ~+$1.85 USDT a ~+$3.80 - $4.10 USDT por trade) manteniendo la exposición máxima por activo topada en el 36% del balance.
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 1: Daemon, CLI Unificada y Legacy Archive) (Commit `313c289`)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-1-daemon-cli-unificada-y-legacy-archive)
 
 ---

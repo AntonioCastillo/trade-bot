@@ -104,8 +104,8 @@ universe:
     risk:
       stop_loss_pct: 0.08
       take_profit_pct: 0.02
-      position_size_pct: 0.06
-      max_concurrent_per_symbol: 5
+      position_size_pct: 0.12
+      max_concurrent_per_symbol: 3
 
 risk:
   quote_currency: USDT
