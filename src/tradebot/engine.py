@@ -368,6 +368,8 @@ class Engine:
         position = self.risk.build_position(
             instrument, decision.order.side, fill.filled_amount,
             fill.filled_price, fill.fee, signal.reason,
+            stop_loss=signal.stop_loss,
+            take_profit=signal.take_profit,
         )
         self.positions.append(position)
         self.storage.save_open_position(position)   # persistir para reinicios

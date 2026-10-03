@@ -25,6 +25,19 @@ def test_signal_to_from_dict():
     assert restored.symbol == "BTC/USDT"
     assert restored.price == 60000.0
     assert restored.reason == "test signal"
+    assert restored.stop_loss is None
+    assert restored.take_profit is None
+
+
+def test_signal_with_sl_tp():
+    sig = Signal(SignalType.BUY, "BTC/USDT", 60000.0, reason="grid", stop_loss=58000.0, take_profit=61500.0)
+    d = sig.to_dict()
+    assert d["stop_loss"] == 58000.0
+    assert d["take_profit"] == 61500.0
+
+    restored = Signal.from_dict(d)
+    assert restored.stop_loss == 58000.0
+    assert restored.take_profit == 61500.0
 
 
 def test_order_and_fill_to_from_dict():

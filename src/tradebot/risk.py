@@ -208,14 +208,25 @@ class RiskManager:
         entry_price: float,
         entry_fee: float,
         reason: str,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
     ) -> Position:
         sl, tp = instrument.stop_loss_pct, instrument.take_profit_pct
-        if side is Side.BUY:
-            stop = entry_price * (1 - sl)
-            take = entry_price * (1 + tp)
+        if stop_loss is not None and stop_loss > 0:
+            stop = stop_loss
         else:
-            stop = entry_price * (1 + sl)
-            take = entry_price * (1 - tp)
+            if side is Side.BUY:
+                stop = entry_price * (1 - sl)
+            else:
+                stop = entry_price * (1 + sl)
+
+        if take_profit is not None and take_profit > 0:
+            take = take_profit
+        else:
+            if side is Side.BUY:
+                take = entry_price * (1 + tp)
+            else:
+                take = entry_price * (1 - tp)
         return Position(
             symbol=instrument.symbol,
             side=side,

@@ -121,8 +121,8 @@ universe:
       adx_max: 25.0
       bidirectional: false
     risk:
-      stop_loss_pct: 0.08
-      take_profit_pct: 0.02
+      stop_loss_pct: 0.05
+      take_profit_pct: 0.025
       position_size_pct: 0.12
       max_concurrent_per_symbol: 3
 

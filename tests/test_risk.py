@@ -91,6 +91,18 @@ def test_per_category_sl_tp_override():
     assert pos.take_profit == pytest.approx(112.0)
 
 
+def test_custom_sl_tp_override():
+    rm = _risk()
+    ins = make_instrument(stop_loss_pct=0.08, take_profit_pct=0.02)
+    # Custom SL/TP passed explicitly (e.g. from structural grid strategy)
+    pos = rm.build_position(
+        ins, Side.BUY, 1, entry_price=100.0, entry_fee=0.1, reason="structural_grid",
+        stop_loss=96.5, take_profit=102.5,
+    )
+    assert pos.stop_loss == pytest.approx(96.5)
+    assert pos.take_profit == pytest.approx(102.5)
+
+
 def test_trailing_stop_ratchets_up_and_never_loosens():
     rm = _risk()
     ins = make_instrument(stop_loss_pct=0.10, trailing_stop_pct=0.05)

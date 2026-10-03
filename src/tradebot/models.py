@@ -45,15 +45,22 @@ class Signal:
     price: float
     reason: str = ""
     timestamp: datetime = field(default_factory=_utcnow)
+    stop_loss: float | None = None
+    take_profit: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "type": self.type.value,
             "symbol": self.symbol,
             "price": self.price,
             "reason": self.reason,
             "timestamp": self.timestamp.isoformat(),
         }
+        if self.stop_loss is not None:
+            d["stop_loss"] = self.stop_loss
+        if self.take_profit is not None:
+            d["take_profit"] = self.take_profit
+        return d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Signal:
@@ -63,6 +70,8 @@ class Signal:
             price=float(d["price"]),
             reason=d.get("reason", ""),
             timestamp=_parse_dt(d.get("timestamp")),
+            stop_loss=float(d["stop_loss"]) if d.get("stop_loss") is not None else None,
+            take_profit=float(d["take_profit"]) if d.get("take_profit") is not None else None,
         )
 
 

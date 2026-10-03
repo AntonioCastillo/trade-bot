@@ -31,6 +31,22 @@ def test_buy_on_downward_level_cross():
     s = GridStrategy(range_period=50, levels=10)
     sig = s.generate_signal("X", _df(prices))
     assert sig.type is SignalType.BUY
+    assert sig.stop_loss is not None
+    # Con low=90, high=110, step=2.0 -> structural_sl = 90 - 1.0 = 89.0
+    # last_price=100 -> capped_sl = max(89.0, 95.0) = 95.0 (tope 5% activo)
+    assert sig.stop_loss == 95.0
+
+
+def test_structural_stop_loss_anchored_near_floor():
+    # Rango 90-110, precio baja a 92 (cerca del suelo)
+    # low=90, high=110, step=2.0 -> structural_sl = 89.0
+    # last_price=92 -> last_price * 0.95 = 87.4
+    # max(89.0, 87.4) = 89.0 (SL estructural más ceñido, a solo 3.26% de distancia)
+    prices = [90 + (i % 21) for i in range(60)] + [94, 92]
+    s = GridStrategy(range_period=50, levels=10)
+    sig = s.generate_signal("X", _df(prices))
+    assert sig.type is SignalType.BUY
+    assert sig.stop_loss == 89.0
 
 
 def test_hold_when_price_rises():

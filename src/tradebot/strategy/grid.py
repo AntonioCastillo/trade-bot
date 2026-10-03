@@ -69,18 +69,24 @@ class GridStrategy(Strategy):
 
         # Compra si el precio ha cruzado a un nivel INFERIOR de la rejilla
         if cur_cell < prev_cell and low <= last_price <= high:
+            structural_sl = low - (step * 0.5)
+            capped_sl = max(structural_sl, last_price * 0.95)
             return Signal(
                 SignalType.BUY, symbol, last_price,
                 reason=f"grid compra: baja a nivel {cur_cell}/{self.levels} "
                        f"[{low:.6f}-{high:.6f}]",
+                stop_loss=capped_sl,
             )
 
         # Venta corta si el precio ha cruzado a un nivel SUPERIOR de la rejilla y bidireccional activo
         if self.bidirectional and cur_cell > prev_cell and low <= last_price <= high:
+            structural_sl = high + (step * 0.5)
+            capped_sl = min(structural_sl, last_price * 1.05)
             return Signal(
                 SignalType.SELL, symbol, last_price,
                 reason=f"grid venta: sube a nivel {cur_cell}/{self.levels} "
                        f"[{low:.6f}-{high:.6f}]",
+                stop_loss=capped_sl,
             )
 
         return Signal(

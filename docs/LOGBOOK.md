@@ -4,9 +4,30 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-03 | Rebalanceo de Ratio Riesgo/Beneficio y Stop Loss Estructural en Grid Lateral](#2026-10-03--rebalanceo-de-ratio-riesgobeneficio-y-stop-loss-estructural-en-grid-lateral)
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-03 | Rebalanceo de Ratio Riesgo/Beneficio y Stop Loss Estructural en Grid Lateral
+
+* **Archivos Afectados:** [`src/tradebot/models.py`](../src/tradebot/models.py), [`src/tradebot/risk.py`](../src/tradebot/risk.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/strategy/grid.py`](../src/tradebot/strategy/grid.py), [`config.yaml`](../config.yaml), [`config_futures.yaml`](../config_futures.yaml), [`tests/test_models.py`](../tests/test_models.py), [`tests/test_risk.py`](../tests/test_risk.py), [`tests/test_grid.py`](../tests/test_grid.py)
+* **Motivo / Justificación Empírica:**
+  * Se identificó una asimetría de penalización en `grid_lateral`: el ratio anterior (SL 8% vs TP 2%) requería 4 operaciones ganadoras para compensar una sola pérdida ($20 USD de pérdida vs $5 USD de ganancia).
+  * Aunque `grid_lateral` mantiene un rendimiento impecable (16/16 operaciones ganadoras), una caída prolongada (como la ruptura de soporte en DOT) erosionaba gran parte del beneficio acumulado.
+* **Cambios Implementados:**
+  1. **Rebalanceo de Ratio Base (de 4:1 a 2:1):**
+     - En `config.yaml` y `config_futures.yaml`, se redujo `stop_loss_pct` de 0.08 (-8.0%) a **0.05 (-5.0%)** y se incrementó `take_profit_pct` de 0.02 (+2.0%) a **0.025 (+2.5%)**.
+     - Ahora 1 stop loss se recupera con solo 2 operaciones con take profit en lugar de 4.
+  2. **Stop Loss Estructural Dinámico por Soporte de Canal:**
+     - En `GridStrategy.generate_signal`, se calcula el nivel de invalidación técnica anclado al soporte del rango: `structural_sl = low - (step * 0.5)`, con un tope máximo de seguridad del -5.0% (`capped_sl = max(structural_sl, last_price * 0.95)`).
+     - Al comprar en los peldaños inferiores (cerca del suelo del canal), el riesgo real de caída se reduce a solo un 2.0% – 3.5%, saliendo de inmediato si el soporte quiebra.
+  3. **Extensión del Modelo `Signal` y `RiskManager.build_position`:**
+     - Se añadieron los campos opcionales `stop_loss` y `take_profit` a `Signal` (con serialización `to_dict` / `from_dict`).
+     - `RiskManager.build_position` y `Engine._check_entry` aceptan y priorizan estos niveles de stop/take personalizados generados por la estrategia cuando están presentes.
+* **Verificación:** 226 tests unitarios y de integración ejecutados y pasando al 100% (`226 passed`).
 
 ---
 
