@@ -175,6 +175,7 @@ class Config:
     carry: CarryConfig = field(default_factory=CarryConfig)
     xsmom: XSMomConfig = field(default_factory=XSMomConfig)
     hedging: HedgingConfig = field(default_factory=HedgingConfig)
+    disabled_heads: list[str] = field(default_factory=list)   # cabezas con `enabled: false`
     db_path: str = "data/tradebot.db"
     log_level: str = "INFO"
     credentials: Credentials = field(default_factory=Credentials)
@@ -202,7 +203,11 @@ class Config:
                 raise ValueError(f"strike_pause de {ins.category} no es válido")
         heads = {ins.category for ins in self.instruments}
         for ins in self.instruments:
-            unknown = [h for h in ins.paused_while_open if h not in heads or h == ins.category]
+            # Una cabeza desactivada no tiene posiciones: referenciarla es inocuo.
+            unknown = [
+                h for h in ins.paused_while_open
+                if h == ins.category or (h not in heads and h not in self.disabled_heads)
+            ]
             if unknown:
                 raise ValueError(
                     f"paused_while_open de {ins.category} referencia cabezas no válidas: {unknown}"
@@ -230,10 +235,13 @@ def _build_instruments(
     universe: list[dict], risk: RiskConfig, default_timeframe: str
 ) -> list[Instrument]:
     """Aplana el universo por categorías en una lista de instrumentos, aplicando
-    los overrides de riesgo de cada categoría sobre los valores globales."""
+    los overrides de riesgo de cada categoría sobre los valores globales.
+    Las cabezas con `enabled: false` se omiten (quedan definidas pero no operan)."""
     instruments: list[Instrument] = []
     seen: set[str] = set()
     for cat in universe or []:
+        if not cat.get("enabled", True):
+            continue
         name = cat.get("name", "sin_categoria")
         strategy_name = cat.get("strategy", "mean_reversion")
         params = cat.get("params") or {}
@@ -319,6 +327,9 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         timeframe=raw.get("timeframe", "1h"),
         lookback=int(raw.get("lookback", 300)),
         instruments=instruments,
+        disabled_heads=[
+            c.get("name", "sin_categoria") for c in raw.get("universe") or [] if not c.get("enabled", True)
+        ],
         risk=risk,
         engine=engine,
         sniper=sniper,

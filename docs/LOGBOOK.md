@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-04 | Validación desde 2022: `capitulacion` Restaurada y `reversion_rango` Desactivada](#2026-10-04--validación-desde-2022-capitulacion-restaurada-y-reversion_rango-desactivada)
 * [2026-10-04 | Reglas de Pausa por Cabeza: Strikes y Pausa Mientras Otra Cabeza Tiene Posiciones](#2026-10-04--reglas-de-pausa-por-cabeza-strikes-y-pausa-mientras-otra-cabeza-tiene-posiciones)
 * [2026-10-04 | Nueva Cabeza `tendencia_alcista` (BTC, BNB, SOL) en Sustitución de las Cabezas Diarias](#2026-10-04--nueva-cabeza-tendencia_alcista-btc-bnb-sol-en-sustitución-de-las-cabezas-diarias)
 * [2026-10-04 | Auditoría con Simulador de Mecánica Real: Símbolos Fijos en Cabezas Diarias y Trailing 8% en Volumen Explosivo](#2026-10-04--auditoría-con-simulador-de-mecánica-real-símbolos-fijos-en-cabezas-diarias-y-trailing-8-en-volumen-explosivo)
@@ -11,6 +12,24 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-04 | Validación desde 2022: `capitulacion` Restaurada y `reversion_rango` Desactivada
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml), [`src/tradebot/config.py`](../src/tradebot/config.py), [`tests/test_pause_rules.py`](../tests/test_pause_rules.py), [`docs/AUDIT_2026-10.md`](AUDIT_2026-10.md)
+* **Motivo / Justificación Empírica:**
+  * Se simuló el conjunto desde enero de 2022 (`livesim.py --combined --start 2022-01-01`). El tramo enero-2022 → febrero-2024 no se había usado para ajustar nada, así que sirve de prueba fuera de muestra e incluye el mercado bajista de 2022. Tabla completa en [`AUDIT_2026-10.md`](AUDIT_2026-10.md), sección 6.2.
+  * **Se confirma:** las reglas de pausa del grid (+39.1% fuera de muestra con ellas, +12.3% sin ellas) y que el trailing del 8% de `volumen_explosivo` no perjudica.
+  * **Se desmiente:** el cambio de `capitulacion` (sin filtro macro ni trailing). Fuera de muestra acierta el 25% en 28 operaciones y convierte 2022 de −2.1% en −10.6%; con la configuración anterior el conjunto da +50.3% en vez de +39.1%.
+  * `reversion_rango` resta en los dos tramos.
+* **Cambios Implementados:**
+  1. `capitulacion`: `macro_btc_filter: true` y `trailing_stop_pct: 0.03` (vuelve a como estaba).
+  2. **Nueva opción `enabled: false` por cabeza** en `config.yaml`: la cabeza sigue definida pero no se cargan sus instrumentos. `Config.disabled_heads` las lista; `paused_while_open` puede referenciar una cabeza desactivada sin impedir el arranque.
+  3. `reversion_rango` desactivada con `enabled: false`.
+* **Resultado simulado de la config resultante:** +42.0% en 31 meses y +113.6% desde 2022, con caída máxima de 12.5% en ambos (antes 17.3%); 2022 queda en −2.1% y +1.2% por semestre.
+* **Reserva principal:** casi todo el resultado viene de `tendencia_alcista` (+94.6 de los +113.6 puntos), que es la única cabeza para la que el tramo de 2022 no es una prueba independiente.
+* **Verificación:** 242 tests pasando (uno nuevo para `enabled: false`).
 
 ---
 

@@ -69,7 +69,7 @@ Cada cabeza está diseñada para explotar una ineficiencia o régimen específic
 
 ## 3. Selección Dinámica por Fuerza Relativa (RS vs BTC)
 
-> **Desde 2026-10-04** las cabezas `breakout_diario` y `momentum_diario` están sustituidas por **`tendencia_alcista`** (1D; BTC, BNB, SOL): ruptura del máximo de 55 días, stop 6%, objetivo 50%, trailing fijo del 15%, sin venta parcial, tamaño 20%. `volumen_explosivo` usa trailing fijo del 8% y `capitulacion` opera sin filtro macro ni trailing. Detalle y mediciones en [AUDIT_2026-10.md](AUDIT_2026-10.md).
+> **Desde 2026-10-04** las cabezas `breakout_diario` y `momentum_diario` están sustituidas por **`tendencia_alcista`** (1D; BTC, BNB, SOL): ruptura del máximo de 55 días, stop 6%, objetivo 50%, trailing fijo del 15%, sin venta parcial, tamaño 20%. `volumen_explosivo` usa trailing fijo del 8% y `reversion_rango` está desactivada (`enabled: false`). Detalle y mediciones en [AUDIT_2026-10.md](AUDIT_2026-10.md).
 >
 > **Rotación sin uso desde 2026-10-04:** ninguna cabeza la activa. Si se reactiva, hay que excluir del pool los símbolos que ya tiene otra cabeza: el motor resuelve cabeza y estrategia solo por símbolo (ver [AUDIT_2026-10.md](AUDIT_2026-10.md), sección 7).
 

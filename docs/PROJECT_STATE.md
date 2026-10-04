@@ -30,7 +30,7 @@
 ### B) La Arquitectura "La Hidra" (6 Cabezas Especializadas)
 En lugar de forzar una única estrategia para todos los mercados, el bot despliega varias cabezas simultáneas sobre un balance unificado.
 
-> **Desde 2026-10-04 son 5 cabezas:** `breakout_diario` y `momentum_diario` (puntos 1 y 2) fueron sustituidas por **`tendencia_alcista`** (1D, BTC/BNB/SOL): ruptura del máximo de 55 días, stop 6%, objetivo 50%, trailing fijo 15%, sin venta parcial, tamaño 20%. Detalle en [`AUDIT_2026-10.md`](AUDIT_2026-10.md), sección 6. Lista histórica:
+> **Desde 2026-10-04 son 4 cabezas activas** (`reversion_rango` está desactivada con `enabled: false`)**:** `breakout_diario` y `momentum_diario` (puntos 1 y 2) fueron sustituidas por **`tendencia_alcista`** (1D, BTC/BNB/SOL): ruptura del máximo de 55 días, stop 6%, objetivo 50%, trailing fijo 15%, sin venta parcial, tamaño 20%. Detalle en [`AUDIT_2026-10.md`](AUDIT_2026-10.md), sección 6. Lista histórica:
 
 1. **`breakout_diario` (1D):** Rupturas de Donchian 20d para capturar tendencias explosivas tempranas.
 2. **`momentum_diario` (1D):** Cruces de medias EMA 10/30 con canales ATR para seguimiento institucional.

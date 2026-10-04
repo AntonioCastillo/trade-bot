@@ -215,6 +215,20 @@ def test_config_parses_pause_rules():
     assert bull.strike_limit == 0 and bull.paused_while_open == []
 
 
+def test_disabled_head_is_skipped_and_can_be_referenced():
+    universe = [
+        {"name": "tendencia", "enabled": False, "symbols": ["BTC/USDT"], "strategy": "breakout"},
+        {"name": "grid", "symbols": ["NEAR/USDT"], "strategy": "grid", "paused_while_open": ["tendencia"]},
+    ]
+    instruments = _build_instruments(universe, RiskConfig(), "4h")
+    assert [i.symbol for i in instruments] == ["NEAR/USDT"]
+
+    # Referenciar una cabeza desactivada no impide arrancar; una inexistente sí.
+    Config(instruments=instruments, disabled_heads=["tendencia"]).validate()
+    with pytest.raises(ValueError, match="paused_while_open"):
+        Config(instruments=instruments).validate()
+
+
 def test_config_rejects_unknown_head_in_paused_while_open():
     universe = [{"name": "grid", "symbols": ["NEAR/USDT"], "strategy": "grid",
                  "paused_while_open": ["no_existe"]}]
