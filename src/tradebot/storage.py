@@ -9,6 +9,7 @@ Dos niveles:
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from .models import ClosedTrade, Fill, Position, Side
@@ -232,6 +233,18 @@ class Storage:
         return self._conn.execute(
             "SELECT * FROM closed_trades ORDER BY closed_at"
         ).fetchall()
+
+    def losing_stop_times(self, category: str, reasons: tuple[str, ...], limit: int = 100) -> list[datetime]:
+        """Horas de cierre de los últimos stops CON PÉRDIDA de una cabeza (más
+        recientes primero). Base de la regla de pausa por strikes."""
+        marks = ",".join("?" for _ in reasons)
+        rows = self._conn.execute(
+            "SELECT closed_at FROM closed_trades"
+            f" WHERE category = ? AND pnl_abs < 0 AND exit_reason IN ({marks})"
+            " ORDER BY id DESC LIMIT ?",
+            (category, *reasons, limit),
+        ).fetchall()
+        return [datetime.fromisoformat(r["closed_at"]) for r in rows]
 
     def summary(self) -> dict:
         """Estadísticas globales sobre las operaciones cerradas."""

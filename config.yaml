@@ -8,66 +8,24 @@ lookback: 300          # nº de velas a mantener para los indicadores
 
 # LA HIDRA MULTICABEZA: cada cabeza especializada en su régimen y sus símbolos.
 universe:
-  # 🟢 Rupturas Rápidas (Captura despegues alcistas verticales)
-  # Símbolos FIJOS desde 2026-10-04: la rotación RS no aportó en la simulación con
-  # mecánica real (ver docs/AUDIT_2026-10.md). El bloque rs_selection se conserva apagado.
-  - name: breakout_diario
-    symbols: [SOL/USDT, AVAX/USDT]
+  # 🟢 Tendencia Alcista (ruptura del máximo de 55 días en las monedas grandes)
+  # Sustituye desde 2026-10-04 a breakout_diario y momentum_diario. Pensada para
+  # acompañar mercados alcistas: sin venta parcial, objetivo lejano y trailing ancho.
+  # Mediciones y reservas en docs/AUDIT_2026-10.md (sección 6, punto 5).
+  - name: tendencia_alcista
+    symbols: [BTC/USDT, BNB/USDT, SOL/USDT]
     strategy: breakout
     timeframe: 1d
     params:
-      lookback: 20
+      lookback: 55
       bidirectional: false
       min_bb_width: 0.02
     macro_btc_filter: true
-    strong_close_filter: true
     risk:
-      stop_loss_pct: 0.03              # stop inicial corto: solo actúa hasta la venta parcial (luego breakeven)
-      take_profit_pct: 0.30
-      trailing_stop_pct: 0.10
-      partial_take_profit_pct: 0.05
-      use_atr_trailing: true
-      atr_trailing_mult: 3.0
-      volatility_sizing: true
+      stop_loss_pct: 0.06              # cada stop cuesta ~1.2% del equity con tamaño 20%
+      take_profit_pct: 0.50
+      trailing_stop_pct: 0.15          # trailing FIJO desde el máximo (sin ATR)
       position_size_pct: 0.20
-    rs_selection:
-      enabled: false
-      top_k: 2
-      lookback_days: 14
-      hysteresis_pct: 5.0
-      pool: [SOL/USDT, AVAX/USDT, BNB/USDT, ADA/USDT, LINK/USDT, LTC/USDT, NEAR/USDT, XRP/USDT, DOGE/USDT, ETH/USDT, DOT/USDT, ATOM/USDT, UNI/USDT, TRX/USDT, SUI/USDT, HNT/USDT, AR/USDT, RENDER/USDT, TAO/USDT, TIA/USDT, INJ/USDT, KAS/USDT, SEI/USDT, FET/USDT, PYTH/USDT]
-
-  # 🟢 Tendencia Confirmada (Momentum sólido con filtro EMA/ATR)
-  # Símbolos FIJOS desde 2026-10-04 (ver breakout_diario).
-  - name: momentum_diario
-    symbols: [BNB/USDT, ADA/USDT]
-    strategy: momentum
-    timeframe: 1d
-    macro_btc_filter: true
-    strong_close_filter: true
-    params:
-      fast_ema: 10
-      slow_ema: 30
-      breakout_lookback: 20
-      breakout_atr_mult: 0.5
-      volume_mult: 1.0
-      bidirectional: false
-      min_bb_width: 0.02
-    risk:
-      stop_loss_pct: 0.03              # stop inicial corto: solo actúa hasta la venta parcial (luego breakeven)
-      take_profit_pct: 0.30
-      trailing_stop_pct: 0.10
-      partial_take_profit_pct: 0.05
-      use_atr_trailing: true
-      atr_trailing_mult: 3.0
-      volatility_sizing: true
-      position_size_pct: 0.20
-    rs_selection:
-      enabled: false
-      top_k: 2
-      lookback_days: 14
-      hysteresis_pct: 5.0
-      pool: [SOL/USDT, AVAX/USDT, BNB/USDT, ADA/USDT, LINK/USDT, LTC/USDT, NEAR/USDT, XRP/USDT, DOGE/USDT, ETH/USDT, DOT/USDT, ATOM/USDT, UNI/USDT, TRX/USDT, SUI/USDT, HNT/USDT, AR/USDT, RENDER/USDT, TAO/USDT, TIA/USDT, INJ/USDT, KAS/USDT, SEI/USDT, FET/USDT, PYTH/USDT]
 
   # 🟢 Explosión de Volumen (Detecta entradas de dinero institucional)
   - name: volumen_explosivo
@@ -117,6 +75,12 @@ universe:
     strategy: grid
     timeframe: 4h
     macro_btc_filter: true
+    # Reglas de pausa (2026-10-04): solo bloquean entradas nuevas; lo abierto se sigue gestionando.
+    strike_pause:                      # 3 stops con pérdida en 7 días -> 30 días sin abrir
+      strikes: 3
+      window_days: 7
+      pause_days: 30
+    paused_while_open: [tendencia_alcista]   # no abre mientras la cabeza alcista tenga posiciones
     params:
       range_period: 100
       levels: 10

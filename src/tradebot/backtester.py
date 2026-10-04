@@ -55,6 +55,7 @@ def run_backtest(
         cfg, strategies={instrument.symbol: strategy}, risk=risk,
         execution=execution, storage=storage, enforce_daily_loss=False,
         max_hold_bars=max_hold_bars,
+        enforce_pause_rules=False,   # las pausas van contra el reloj real, no el de las velas
     )
 
     for i in range(warmup, len(candles) + 1):

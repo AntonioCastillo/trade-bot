@@ -6,15 +6,18 @@ el daemon hace otra cosa, y eso cambia el resultado:
   - las salidas (stop / parcial / objetivo / trailing) se comprueban cada 60 s
     (aquí: sobre velas de 15 min, mirando máximo y mínimo);
   - el tamaño es un % del USDT LIBRE, con tope por símbolo, global y de exposición;
-  - filtro macro de BTC (precio >= EMA50 diaria) y de cierre fuerte si la cabeza los usa.
+  - filtro macro de BTC (precio >= EMA50 diaria) y de cierre fuerte si la cabeza los usa;
+  - reglas de pausa de la cabeza (`strike_pause` y `paused_while_open`).
 
-Cada cabeza se simula SOLA (en real comparten saldo y topes). Lee las cabezas de
+Por defecto cada cabeza se simula SOLA; con --combined se simulan todas juntas,
+compitiendo por el saldo libre y los topes como en real. Lee las cabezas de
 config.yaml; las que usan rotación RS se miden con scripts/livesim_trend.py.
 
 Uso:
     python scripts/livesim.py                       # todas las cabezas fijas
     python scripts/livesim.py --head grid_lateral   # una sola
     python scripts/livesim.py --start 2025-01-01 --trades 15
+    python scripts/livesim.py --combined            # todas juntas, compitiendo por el saldo
     python scripts/livesim.py --refresh             # vuelve a descargar las velas
 
 Las velas se cachean en data/livesim/ (primera ejecución: varios minutos).
@@ -185,18 +188,27 @@ def head_signals(ins: Instrument, fine: pd.DataFrame, lookback: int) -> list[tup
 def simulate_head(instruments: list[Instrument], config: Config, start: pd.Timestamp,
                   refresh: bool = False,
                   entry_filter: Callable[[Instrument, pd.Timestamp], bool] | None = None,
+                  portfolio_filter: Callable[[Instrument, pd.Timestamp, list[dict]], bool] | None = None,
+                  on_close: Callable[[dict], None] | None = None,
                   ) -> tuple[pd.DataFrame, pd.Series]:
-    """Simula una cabeza (todos sus símbolos, saldo compartido). Devuelve
-    (operaciones, curva de equity cada 4 h) con equity inicial = 1.
-    `entry_filter(instrumento, hora)` permite probar filtros de entrada adicionales."""
-    ref = instruments[0]
+    """Simula un grupo de instrumentos con saldo compartido: una cabeza, o varias a
+    la vez (así compiten por el USDT libre y los topes, como en real). Devuelve
+    (operaciones, curva de equity cada 4 h) con equity inicial = 1; las entradas
+    rechazadas por cabeza y motivo quedan en `equity.attrs["rejected"]`.
+    `entry_filter(instrumento, hora)` permite probar filtros de entrada adicionales;
+    `portfolio_filter(instrumento, hora, posiciones_abiertas)` lo mismo, pero viendo
+    la cartera (cada posición es un dict con al menos `head` y `symbol`).
+    `on_close(operación)` se llama al cerrar cada operación (para reglas con memoria,
+    p. ej. pausar una cabeza tras varios stops)."""
     fee, slip = config.engine.fee_pct, config.engine.slippage_pct
     since = start - pd.Timedelta(days=WARMUP_DAYS)
     fine = {ins.symbol: candles(ins.symbol, "15m", since, refresh) for ins in instruments}
     # Hasta el último día completo: resultados (y caché de señales) estables durante el día.
     cutoff = min(df.index[-1] for df in fine.values()).floor("D")
     fine = {s: df[df.index < cutoff] for s, df in fine.items()}
-    macro = MacroFilter(candles(BTC, "4h", since - pd.Timedelta(days=90), refresh)) if ref.macro_btc_filter else None
+    macro = None
+    if any(ins.macro_btc_filter for ins in instruments):
+        macro = MacroFilter(candles(BTC, "4h", since - pd.Timedelta(days=90), refresh))
 
     signals_at: dict[pd.Timestamp, list] = {}
     for ins in instruments:
@@ -211,12 +223,39 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
     close_time = idx + pd.Timedelta(EXIT_TF)
     arr = {s: {k: df[k].reindex(idx).to_numpy() for k in ("open", "high", "low", "close")} for s, df in fine.items()}
     atr_fine = {}
-    if ref.use_atr_trailing:
-        for ins in instruments:
+    for ins in instruments:
+        if ins.use_atr_trailing:
             c = fine[ins.symbol].resample(pandas_tf(ins.timeframe)).agg(AGG).dropna()
             a = indicators.atr(c["high"], c["low"], c["close"], 14)
             a.index = a.index + pd.Timedelta(pandas_tf(ins.timeframe))   # disponible al cierre de la vela
             atr_fine[ins.symbol] = a.reindex(idx, method="ffill").to_numpy()
+
+    rejected: dict[str, dict[str, int]] = {}
+
+    def reject(ins: Instrument, why: str) -> None:
+        by_head = rejected.setdefault(ins.category, {})
+        by_head[why] = by_head.get(why, 0) + 1
+
+    # Reglas de pausa por cabeza (misma lógica que Engine._register_strike).
+    head_cfg = {ins.category: ins for ins in instruments}
+    strikes: dict[str, list[pd.Timestamp]] = {}
+    paused_until: dict[str, pd.Timestamp] = {}
+    pauses: dict[str, int] = {}
+
+    def register_strike(trade: dict) -> None:
+        ins = head_cfg[trade["head"]]
+        if ins.strike_limit <= 0 or trade["pnl"] >= 0 or trade["reason"] not in ("stop-loss", "trailing-stop"):
+            return
+        head, t = ins.category, trade["closed"]
+        if head in paused_until and t < paused_until[head]:
+            return
+        window = pd.Timedelta(days=ins.strike_window_days)
+        recent = [x for x in strikes.get(head, []) if t - x <= window] + [t]
+        strikes[head] = recent
+        if len(recent) >= ins.strike_limit:
+            paused_until[head] = t + pd.Timedelta(days=ins.strike_pause_days)
+            pauses[head] = pauses.get(head, 0) + 1
+            strikes[head] = []
 
     cash = 1.0
     positions: list[dict] = []
@@ -233,8 +272,11 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
 
     def close(p: dict, fill: float, t: pd.Timestamp, reason: str) -> None:
         sell(p, fill, p["amount"])
-        trades.append(dict(opened=p["opened"], closed=t, symbol=p["symbol"], reason=reason,
+        trades.append(dict(opened=p["opened"], closed=t, head=p["head"], symbol=p["symbol"], reason=reason,
                            ret=p["realized"] / p["cost"] - 1, pnl=p["realized"] - p["cost"]))
+        register_strike(trades[-1])
+        if on_close is not None:
+            on_close(trades[-1])
 
     for n in range(len(idx)):
         t = close_time[n]
@@ -271,18 +313,30 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
                 last_px[s] = c
 
         for ins, price, sig_stop, sig_take, atr in signals_at.get(t, ()):
-            if macro is not None and not macro.bullish(t):
+            if any(q["head"] in ins.paused_while_open for q in positions):
+                reject(ins, "pausa por otra cabeza")
+                continue
+            if ins.category in paused_until and t < paused_until[ins.category]:
+                reject(ins, "pausa por strikes")
+                continue
+            if ins.macro_btc_filter and macro is not None and not macro.bullish(t):
                 continue
             if entry_filter is not None and not entry_filter(ins, t):
                 continue
+            if portfolio_filter is not None and not portfolio_filter(ins, t, positions):
+                reject(ins, "filtro de cartera")
+                continue
             if len(positions) >= config.risk.max_open_positions:
+                reject(ins, "tope de posiciones")
                 continue
             if sum(1 for p in positions if p["symbol"] == ins.symbol) >= ins.max_concurrent_per_symbol:
+                reject(ins, "símbolo ocupado")
                 continue
             capital = cash * ins.position_size_pct
             exposure = sum(p["entry"] * p["amount"] for p in positions)
             cap = config.risk.max_total_exposure_pct
             if cap < 1.0 and cash > 0 and (exposure + capital) / cash > cap:
+                reject(ins, "tope de exposición")
                 continue
             if ins.volatility_sizing and atr > 0:
                 factor = ins.volatility_ref_atr_pct / (atr / price)
@@ -292,7 +346,7 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
             entry = price * (1 + slip)
             cash -= capital
             positions.append(dict(
-                symbol=ins.symbol, opened=t, entry=entry, amount=capital * (1 - fee) / entry, cost=capital,
+                symbol=ins.symbol, head=ins.category, opened=t, entry=entry, amount=capital * (1 - fee) / entry, cost=capital,
                 stop=sig_stop if sig_stop else entry * (1 - ins.stop_loss_pct),
                 take=sig_take if sig_take else entry * (1 + ins.take_profit_pct),
                 peak=entry, realized=0.0, partial=ins.partial_take_profit_pct,
@@ -308,8 +362,11 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
 
     for p in positions:                                            # mark-to-market final
         close(p, last_px[p["symbol"]], close_time[-1], "abierta")
-    columns = ["opened", "closed", "symbol", "reason", "ret", "pnl"]
-    return pd.DataFrame(trades, columns=columns), pd.Series(eq_v, index=eq_t)
+    columns = ["opened", "closed", "head", "symbol", "reason", "ret", "pnl"]
+    equity = pd.Series(eq_v, index=eq_t)
+    equity.attrs["rejected"] = rejected
+    equity.attrs["pauses"] = pauses
+    return pd.DataFrame(trades, columns=columns), equity
 
 
 # --- Informe ---------------------------------------------------------------------------
@@ -378,6 +435,23 @@ def print_report(name: str, instruments: list[Instrument], trades: pd.DataFrame,
             print(f"  {r.opened:%Y-%m-%d %H:%M} → {r.closed:%m-%d %H:%M} {r.symbol:10} {r.ret * 100:+6.2f}% {r.reason}")
 
 
+def print_combined(heads: dict[str, list[Instrument]], trades: pd.DataFrame, equity: pd.Series) -> None:
+    """Informe de varias cabezas simuladas JUNTAS (compitiendo por el saldo libre)."""
+    print(f"\n==== CONJUNTO ({', '.join(heads)}) con saldo compartido")
+    print(f"{equity.index[0].date()} → {equity.index[-1].date()}: {summary_line(trades, equity)}")
+    print("por semestre: " + " | ".join(
+        f"{k}: {(e.iloc[-1] / e.iloc[0] - 1) * 100:+.1f}%" for k, e in equity.groupby(_half_year(equity.index))))
+    rejected = equity.attrs.get("rejected", {})
+    for name in heads:
+        t = trades[trades["head"] == name]
+        blocked = ", ".join(f"{n} por {why}" for why, n in rejected.get(name, {}).items()) or "ninguna"
+        if equity.attrs.get("pauses", {}).get(name):
+            blocked += f" | pausas por strikes: {equity.attrs['pauses'][name]}"
+        wins = f"{(t.pnl > 0).mean() * 100:3.0f}%" if len(t) else "  –"
+        print(f"  {name:18} ops {len(t):3d} | acierto {wins} | aporta {t.pnl.sum() * 100:+6.1f}% del equity inicial | "
+              f"entradas rechazadas: {blocked}")
+
+
 def fixed_heads(config: Config) -> dict[str, list[Instrument]]:
     heads: dict[str, list[Instrument]] = {}
     for ins in config.instruments:
@@ -392,6 +466,8 @@ def main() -> None:
     parser.add_argument("--start", default="2024-03-01", help="Fecha de inicio (def: 2024-03-01)")
     parser.add_argument("--trades", type=int, default=0, help="Lista las últimas N operaciones")
     parser.add_argument("--refresh", action="store_true", help="Vuelve a descargar las velas")
+    parser.add_argument("--combined", action="store_true",
+                        help="Simula todas las cabezas JUNTAS, compitiendo por el saldo libre y los topes")
     parser.add_argument("--config", default="config.yaml")
     args = parser.parse_args()
 
@@ -403,10 +479,17 @@ def main() -> None:
             print(f"Cabeza desconocida o con rotación RS: {args.head}. Disponibles: {', '.join(heads)}")
             return
         heads = {args.head: heads[args.head]}
+    if args.combined:
+        everything = [ins for group in heads.values() for ins in group]
+        trades, equity = simulate_head(everything, config, start, refresh=args.refresh)
+        print_combined(heads, trades, equity)
+        print("\nNota: rendimiento pasado NO garantiza resultados futuros.")
+        return
     for name, instruments in heads.items():
         trades, equity = simulate_head(instruments, config, start, refresh=args.refresh)
         print_report(name, instruments, trades, equity, start, args.trades)
-    print("\nNota: cada cabeza se simula sola; rendimiento pasado NO garantiza resultados futuros.")
+    print("\nNota: cada cabeza se simula sola (usa --combined para verlas juntas); "
+          "rendimiento pasado NO garantiza resultados futuros.")
 
 
 if __name__ == "__main__":

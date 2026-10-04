@@ -28,7 +28,10 @@
 *   **Decisión:** Se creó el script `scripts/cleanup_legacy.py` para purgar los registros antiguos de scalping y se rediseñó el sistema hacia **timeframes altos (1D y 4H)** con bajas comisiones y alto ratio beneficio/riesgo.
 
 ### B) La Arquitectura "La Hidra" (6 Cabezas Especializadas)
-En lugar de forzar una única estrategia para todos los mercados, el bot despliega 6 cabezas simultáneas sobre un balance unificado:
+En lugar de forzar una única estrategia para todos los mercados, el bot despliega varias cabezas simultáneas sobre un balance unificado.
+
+> **Desde 2026-10-04 son 5 cabezas:** `breakout_diario` y `momentum_diario` (puntos 1 y 2) fueron sustituidas por **`tendencia_alcista`** (1D, BTC/BNB/SOL): ruptura del máximo de 55 días, stop 6%, objetivo 50%, trailing fijo 15%, sin venta parcial, tamaño 20%. Detalle en [`AUDIT_2026-10.md`](AUDIT_2026-10.md), sección 6. Lista histórica:
+
 1. **`breakout_diario` (1D):** Rupturas de Donchian 20d para capturar tendencias explosivas tempranas.
 2. **`momentum_diario` (1D):** Cruces de medias EMA 10/30 con canales ATR para seguimiento institucional.
 3. **`grid_lateral` (4H):** Cuadrícula dinámica de soporte/resistencia con filtro ADX < 25 (9 victorias de 9 trades).
@@ -37,7 +40,7 @@ En lugar de forzar una única estrategia para todos los mercados, el bot desplie
 6. **`capitulacion` (4H):** Francotirador de pánicos extremos (RSI < 20) para comprar rebotes en "V".
 
 ### C) Escáner Continuo de Fuerza Relativa (RS vs BTC en 4H) — **APAGADO desde 2026-10-04**
-*   `breakout_diario` opera SOL/AVAX y `momentum_diario` BNB/ADA de forma fija (`rs_selection.enabled: false`). La rotación no aportó en la simulación, provocaba entradas tardías y una colisión de símbolos entre cabezas. El código se conserva; lo siguiente describe cómo funcionaba:
+*   Las dos cabezas que usaban la rotación ya no existen (sustituidas por `tendencia_alcista`, de símbolos fijos). Antes de eliminarlas pasaron a símbolos fijos (`rs_selection.enabled: false`). La rotación no aportó en la simulación, provocaba entradas tardías y una colisión de símbolos entre cabezas. El código se conserva; lo siguiente describe cómo funcionaba:
 *   Las cabezas de tendencia no usan activos fijos: un evaluador programado en `daemon.py` calcula la **Fuerza Relativa contra Bitcoin a 14 días** cada 4 horas (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC).
 *   Selecciona automáticamente los **2 activos líderes** de un pool de 25 altcoins líquidas y les asigna el capital.
 *   Incorpora un **filtro de histéresis del 5.0%** para evitar rotaciones excesivas por pequeñas fluctuaciones.
@@ -52,6 +55,7 @@ En lugar de forzar una única estrategia para todos los mercados, el bot desplie
 2. **Toma Parcial 50% @ +5%:** Al llegar al +5% de ganancia, vende la mitad y asegura el dinero en caja.
 3. **Stop Loss a Breakeven Inmediato:** Tras la toma parcial, el Stop Loss restante se fija en el precio de entrada (Riesgo Cero).
 4. **Chandelier Trailing Stop:** Deja correr el 50% restante con un trailing stop dinámico basado en ATR (cabezas diarias). `volumen_explosivo` usa trailing fijo del 8% desde 2026-10-04.
+5. **Reglas de pausa por cabeza (2026-10-04):** `strike_pause` (N stops con pérdida en una ventana pausan la cabeza) y `paused_while_open` (no abre mientras otra cabeza tenga posiciones). Activas en `grid_lateral`: 3 stops en 7 días → 30 días de pausa, y pausa mientras `tendencia_alcista` tenga posiciones. Solo bloquean entradas; el estado persiste en la BD.
 
 ---
 

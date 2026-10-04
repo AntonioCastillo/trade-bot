@@ -107,6 +107,11 @@ def build_status(engine, config) -> dict[str, Any]:
     except Exception:
         pass
 
+    try:
+        paused_heads = engine.paused_heads()
+    except Exception:
+        paused_heads = {}
+
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mode": config.mode,
@@ -121,6 +126,7 @@ def build_status(engine, config) -> dict[str, Any]:
         "halted": engine.risk.halted,
         "heads": active_heads(config),
         "by_head": by_head,
+        "paused_heads": paused_heads,
         "sniper_enabled": config.sniper.enabled,
         "carry_enabled": config.carry.enabled,
     }

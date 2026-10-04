@@ -4,11 +4,54 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-04 | Reglas de Pausa por Cabeza: Strikes y Pausa Mientras Otra Cabeza Tiene Posiciones](#2026-10-04--reglas-de-pausa-por-cabeza-strikes-y-pausa-mientras-otra-cabeza-tiene-posiciones)
+* [2026-10-04 | Nueva Cabeza `tendencia_alcista` (BTC, BNB, SOL) en Sustitución de las Cabezas Diarias](#2026-10-04--nueva-cabeza-tendencia_alcista-btc-bnb-sol-en-sustitución-de-las-cabezas-diarias)
 * [2026-10-04 | Auditoría con Simulador de Mecánica Real: Símbolos Fijos en Cabezas Diarias y Trailing 8% en Volumen Explosivo](#2026-10-04--auditoría-con-simulador-de-mecánica-real-símbolos-fijos-en-cabezas-diarias-y-trailing-8-en-volumen-explosivo)
 * [2026-10-03 | Rebalanceo de Ratio Riesgo/Beneficio y Stop Loss Estructural en Grid Lateral](#2026-10-03--rebalanceo-de-ratio-riesgobeneficio-y-stop-loss-estructural-en-grid-lateral)
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-04 | Reglas de Pausa por Cabeza: Strikes y Pausa Mientras Otra Cabeza Tiene Posiciones
+
+* **Archivos Afectados:** [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/config.py`](../src/tradebot/config.py), [`src/tradebot/storage.py`](../src/tradebot/storage.py), [`src/tradebot/backtester.py`](../src/tradebot/backtester.py), [`src/tradebot/status.py`](../src/tradebot/status.py), [`src/tradebot/telegram_views.py`](../src/tradebot/telegram_views.py), [`scripts/livesim.py`](../scripts/livesim.py), [`config.yaml`](../config.yaml), [`tests/test_pause_rules.py`](../tests/test_pause_rules.py), [`tests/test_global_drawdown.py`](../tests/test_global_drawdown.py)
+* **Motivo / Petición del Usuario:**
+  * `grid_lateral` es la cabeza con más aciertos en real (21 de 21) pero la que más resta en la simulación de 31 meses. El operador propuso dos formas de acotarla sin apagarla: pausarla tras 3 saltos de stop y pausarla mientras la cabeza alcista esté activa.
+* **Cambios Implementados:**
+  1. **Dos opciones nuevas por cabeza en `config.yaml`** (desactivadas por defecto):
+     - `strike_pause: {strikes, window_days, pause_days}`: tras `strikes` stops con pérdida (`stop-loss` o `trailing-stop` con P&L negativo) en `window_days`, la cabeza no abre posiciones durante `pause_days`.
+     - `paused_while_open: [cabeza, …]`: la cabeza no abre mientras alguna de las indicadas tenga posiciones abiertas.
+  2. **Motor (`Engine`):** `_entry_pause_reason` se consulta en `_check_entry` antes de los demás filtros; `_register_strike` se llama al cerrar cada posición. El estado se guarda en la tabla `state` (`pause_until:<cabeza>`, `strike_reset:<cabeza>`) y **sobrevive a reinicios**. Los strikes que ya causaron una pausa no vuelven a contar.
+  3. **Solo afectan a entradas nuevas:** stops, objetivos y trailing de las posiciones abiertas se siguen ejecutando durante la pausa.
+  4. **Avisos:** Telegram al pausar (⏸️) y al reanudar (▶️); línea "En pausa" en el informe diario; campo `paused_heads` en el status del gist.
+  5. **Backtester:** construye el motor con `enforce_pause_rules=False`, porque las pausas van contra el reloj real y no contra el de las velas. `scripts/livesim.py` sí las simula, con la misma lógica.
+  6. **Activadas solo en `grid_lateral`:** 3 stops en 7 días → 30 días de pausa, y pausa mientras `tendencia_alcista` tenga posiciones.
+* **Evidencia (`livesim.py --combined`, 31 meses):** el conjunto pasa de +16.7% (caída máx. 20.8%) a **+55.3%** (17.3%); el grid pasa de restar 31.5 puntos a restar 2.1, con 119 operaciones en vez de 490 y 7 pausas por strikes. Aplicar strikes a todas las cabezas empeora (+31–40%) porque `capitulacion` y `tendencia_alcista` aciertan una de cada tres por diseño.
+* **Reservas:** el +55.3% es un techo optimista (parámetros elegidos sobre estos datos; 15.5 puntos son posiciones simuladas sin realizar). Dentro del periodo hay 361 días sin superar el máximo anterior y el 19% de las ventanas de un año acaban en negativo. La pausa por la cabeza alcista no selecciona los buenos momentos del grid; mejora por liberar saldo y reducir su actividad.
+* **Verificación:** 241 tests pasando (13 nuevos en `tests/test_pause_rules.py`: disparo, ventana, reinicio, vencimiento, no reincidencia, aislamiento entre cabezas, gestión de posiciones abiertas, parseo y validación de config). `livesim.py --combined` con el `config.yaml` final reproduce el +55.3%.
+
+---
+
+### 2026-10-04 | Nueva Cabeza `tendencia_alcista` (BTC, BNB, SOL) en Sustitución de las Cabezas Diarias
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml), [`docs/AUDIT_2026-10.md`](AUDIT_2026-10.md), [`docs/PROJECT_STATE.md`](PROJECT_STATE.md), [`docs/ARCHITECTURE.md`](ARCHITECTURE.md), [`README.md`](../README.md)
+* **Motivo / Petición del Usuario:**
+  * El operador observó que en un mercado alcista el bot debería ganar con facilidad y propuso una cabeza que entrara con más capital, con stop moderado y objetivo lejano.
+  * Medición previa: en meses alcistas las cabezas acertaban pero solo tenían invertido un 3–7% del equity de media y capturaban entre el 1% y el 6% de la subida.
+* **Cambios Implementados:**
+  1. Se **eliminan `breakout_diario` y `momentum_diario`** (y con ellas el bloque `rs_selection`, ya apagado). AVAX y ADA salen del bot.
+  2. Se **añade `tendencia_alcista`** sobre BTC, BNB y SOL: estrategia `breakout` con `lookback: 55` en velas diarias, `stop_loss_pct: 0.06`, `take_profit_pct: 0.50`, `trailing_stop_pct: 0.15` (fijo, sin ATR), sin venta parcial, `position_size_pct: 0.20`, con filtro macro de BTC. Solo configuración; no se tocó código.
+* **Evidencia (simulador con mecánica real, `scripts/livesim.py`):**
+  * 31 meses: +30.0% con caída máxima 10.4%, frente a +8.9% y +8.2% de las dos cabezas sustituidas (caídas 3.4% y 2.3%).
+  * Desde 2022 (57 meses, incluye el bajista de 2022): +90.0% con caída máxima 10.4%, frente a +14.8% y +13.7%. Por año: −2.8%, +36.3%, +26.1%, +7.1%, +6.5%.
+  * Positiva en todas las variantes de stop (5–10%), trailing (12–18%) y tamaño probadas, en los dos periodos.
+  * **Contraprueba:** sobre las 10 monedas pequeñas libres del pool pierde en todas las variantes (−13% a −55%). La cabeza amplifica lo que hace la moneda; por eso se limita a las grandes.
+* **Reservas:** sesgo de selección (ETH se excluyó tras verlo restar; BTC, BNB y SOL son ganadoras del ciclo); acierta una de cada tres y encadena hasta 9 pérdidas; la caída máxima esperable pasa del 2–5% al 10–13%; unas 70 operaciones en cinco años.
+* **Efecto sobre las demás cabezas** (`livesim.py --combined`, nuevo): simuladas juntas y compitiendo por el saldo libre, las 5 cabezas dan **+16.7%** en 31 meses (caída máx. 20.8%); sin `grid_lateral`, **+51.5%** (15.3%). Las posiciones largas de `tendencia_alcista` hacen que el tope de exposición rechace 410 entradas del grid (que pasa de −42 a −31.5 puntos) y 16 de `volumen_explosivo` (de +11.5 a +7.6).
+* **Antes de reiniciar el servicio:** comprobar que no hay posiciones abiertas en AVAX ni ADA (a las 19:39 UTC no había ninguna abierta en el bot).
+* **Verificación:** 228 tests pasando; `python scripts/livesim.py --head tendencia_alcista` reproduce +30.0% con el `config.yaml` final.
 
 ---
 

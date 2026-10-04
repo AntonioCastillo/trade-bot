@@ -69,7 +69,9 @@ Cada cabeza está diseñada para explotar una ineficiencia o régimen específic
 
 ## 3. Selección Dinámica por Fuerza Relativa (RS vs BTC)
 
-> **Apagada desde 2026-10-04** (`rs_selection.enabled: false`). Las cabezas diarias operan símbolos fijos. Si se reactiva, hay que excluir del pool los símbolos que ya tiene otra cabeza: el motor resuelve cabeza y estrategia solo por símbolo (ver [AUDIT_2026-10.md](AUDIT_2026-10.md), sección 7).
+> **Desde 2026-10-04** las cabezas `breakout_diario` y `momentum_diario` están sustituidas por **`tendencia_alcista`** (1D; BTC, BNB, SOL): ruptura del máximo de 55 días, stop 6%, objetivo 50%, trailing fijo del 15%, sin venta parcial, tamaño 20%. `volumen_explosivo` usa trailing fijo del 8% y `capitulacion` opera sin filtro macro ni trailing. Detalle y mediciones en [AUDIT_2026-10.md](AUDIT_2026-10.md).
+>
+> **Rotación sin uso desde 2026-10-04:** ninguna cabeza la activa. Si se reactiva, hay que excluir del pool los símbolos que ya tiene otra cabeza: el motor resuelve cabeza y estrategia solo por símbolo (ver [AUDIT_2026-10.md](AUDIT_2026-10.md), sección 7).
 
 Para las cabezas de tendencia (`breakout` y `momentum`), el bot no opera monedas estáticas, sino que **escanea automáticamente el mercado cada 4 Horas** (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC):
 
@@ -91,7 +93,10 @@ $$\text{RS}_{\text{activo}} = \text{Retorno}_{\text{activo}}(14\text{d}) - \text
    - Inmediatamente tras la toma parcial, el Stop Loss del 50% restante se mueve al **precio de entrada (Breakeven)**, convirtiendo la operación en **riesgo cero**.
 4. **Chandelier Trailing Stop:**
    - El 50% restante cabalga la tendencia con un trailing stop dinámico basado en ATR ($3 \times \text{ATR}$ o 10%) para maximizar ganancias. `volumen_explosivo` usa en su lugar un trailing fijo del 8% desde 2026-10-04.
-5. **Cortafuegos de Pérdida Diaria:**
+5. **Reglas de Pausa por Cabeza (desde 2026-10-04):**
+   - `strike_pause`: tras N stops con pérdida en una ventana de días, la cabeza deja de abrir posiciones durante un periodo. `paused_while_open`: la cabeza no abre mientras otra indicada tenga posiciones.
+   - Solo bloquean entradas nuevas; el estado se guarda en la tabla `state` y sobrevive a reinicios. Activas en `grid_lateral` (3 stops en 7 días → 30 días; pausa mientras `tendencia_alcista` tenga posiciones).
+6. **Cortafuegos de Pérdida Diaria:**
    - Si el drawdown intradía supera el límite configurado (`max_daily_loss_pct`), el bot pausa la apertura de nuevas posiciones hasta las 00:00 UTC.
 
 ---

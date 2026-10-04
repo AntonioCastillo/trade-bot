@@ -11,6 +11,7 @@ que luego se consulta para juzgar la viabilidad.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -24,6 +25,9 @@ from .storage import Storage
 from .strategy.base import Strategy
 
 logger = logging.getLogger(__name__)
+
+# Salidas que cuentan como "strike" (si además cierran en pérdida).
+STRIKE_EXIT_REASONS = ("stop-loss", "trailing-stop")
 
 
 class Engine:
@@ -39,6 +43,7 @@ class Engine:
         notifier: Notifier | None = None,
         head_log_dir: str | None = None,
         max_hold_bars: int = 0,
+        enforce_pause_rules: bool = True,
     ):
         self.config = config
         self.strategies = strategies
@@ -50,6 +55,8 @@ class Engine:
         self.notifier = notifier or NullNotifier()
         self.head_log_dir = head_log_dir
         self.max_hold_bars = max_hold_bars   # 0 = sin tope de tiempo
+        # Las pausas van contra el reloj real: el backtester las desactiva.
+        self.enforce_pause_rules = enforce_pause_rules
         self.positions: list[Position] = []
         self.last_prices: dict[str, float] = {}
         self.closed_trades: list[ClosedTrade] = []
@@ -287,6 +294,10 @@ class Engine:
                     volatility_size_max=sample_ins.volatility_size_max,
                     strong_close_filter=sample_ins.strong_close_filter,
                     strong_close_threshold=sample_ins.strong_close_threshold,
+                    strike_limit=sample_ins.strike_limit,
+                    strike_window_days=sample_ins.strike_window_days,
+                    strike_pause_days=sample_ins.strike_pause_days,
+                    paused_while_open=list(sample_ins.paused_while_open),
                 )
                 new_instruments.append(new_ins)
 
@@ -304,6 +315,13 @@ class Engine:
 
         instrument = self.config.instrument(symbol)
         head = f"{instrument.category}/{instrument.strategy_name}"
+
+        # Reglas de pausa de la cabeza (strikes / otra cabeza con posiciones).
+        if self.enforce_pause_rules:
+            paused = self._entry_pause_reason(instrument)
+            if paused:
+                logger.info("[%s] Entrada en %s omitida: %s", head, symbol, paused)
+                return
 
         # Filtro Macro de BTC: congela nuevas compras en altcoins si BTC < EMA50
         if getattr(instrument, "macro_btc_filter", False):
@@ -390,6 +408,99 @@ class Engine:
             equity=equity,
             quote=quote,
         )
+
+    # --- Reglas de pausa por cabeza ---------------------------------------------------
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
+
+    def _head_instrument(self, category: str) -> Instrument | None:
+        for ins in self.config.instruments:
+            if ins.category == category:
+                return ins
+        return None
+
+    def _entry_pause_reason(self, instrument: Instrument) -> str | None:
+        """Motivo por el que la cabeza no puede abrir ahora, o None si puede."""
+        for other in instrument.paused_while_open:
+            if any(p.category == other for p in self.positions):
+                return f"en pausa mientras {other} tenga posiciones abiertas"
+
+        if instrument.strike_limit > 0:
+            key = f"pause_until:{instrument.category}"
+            until = self.storage.get_state(key) or 0.0
+            if until:
+                if self._now().timestamp() < until:
+                    limit = datetime.fromtimestamp(until, tz=timezone.utc)
+                    return f"en pausa por strikes hasta {limit:%Y-%m-%d %H:%M} UTC"
+                self.storage.set_state(key, 0.0)          # pausa cumplida
+                logger.info("[%s] Pausa por strikes cumplida: vuelve a operar", instrument.category)
+                self.notifier.notify(
+                    f"▶️ <b>Cabeza reanudada</b>: {instrument.category}\n"
+                    "Termina la pausa por strikes; vuelve a poder abrir posiciones."
+                )
+        return None
+
+    def _register_strike(self, trade: ClosedTrade) -> None:
+        """Tras un stop con pérdida, pausa la cabeza si acumula `strike_limit`
+        en `strike_window_days`. El estado se persiste (sobrevive a reinicios)."""
+        if not self.enforce_pause_rules:
+            return
+        if trade.exit_reason not in STRIKE_EXIT_REASONS or trade.pnl_abs >= 0:
+            return
+        instrument = self._head_instrument(trade.category)
+        if instrument is None or instrument.strike_limit <= 0:
+            return
+
+        head = instrument.category
+        now = trade.closed_at
+        if now.timestamp() < (self.storage.get_state(f"pause_until:{head}") or 0.0):
+            return                                        # ya está en pausa
+        window_start = now - timedelta(days=instrument.strike_window_days)
+        # Los strikes que ya provocaron una pausa anterior no vuelven a contar.
+        reset_at = self.storage.get_state(f"strike_reset:{head}") or 0.0
+        strikes = sum(
+            1 for t in self.storage.losing_stop_times(head, STRIKE_EXIT_REASONS)
+            if t >= window_start and t.timestamp() > reset_at
+        )
+        if strikes < instrument.strike_limit:
+            return
+
+        until = now + timedelta(days=instrument.strike_pause_days)
+        self.storage.set_state(f"pause_until:{head}", until.timestamp())
+        self.storage.set_state(f"strike_reset:{head}", now.timestamp())
+        logger.warning(
+            "[%s] %d stops con pérdida en %g días: cabeza EN PAUSA hasta %s",
+            head, strikes, instrument.strike_window_days, until.isoformat(timespec="minutes"),
+        )
+        self._log_head(head, f"PAUSA por strikes ({strikes} stops) hasta {until:%Y-%m-%d %H:%M} UTC")
+        self.notifier.notify(
+            f"⏸️ <b>Cabeza en pausa</b>: {head}\n"
+            f"{strikes} stops con pérdida en {instrument.strike_window_days:g} días. "
+            f"No abrirá posiciones nuevas hasta el {until:%Y-%m-%d %H:%M} UTC.\n"
+            "Las posiciones abiertas se siguen gestionando."
+        )
+
+    def paused_heads(self) -> dict[str, str]:
+        """Cabezas que ahora mismo no pueden abrir posiciones, con el motivo."""
+        out: dict[str, str] = {}
+        if not self.enforce_pause_rules:
+            return out
+        now = self._now().timestamp()
+        seen: set[str] = set()
+        for ins in self.config.instruments:
+            if ins.category in seen:
+                continue
+            seen.add(ins.category)
+            blockers = [h for h in ins.paused_while_open if any(p.category == h for p in self.positions)]
+            if blockers:
+                out[ins.category] = f"mientras {', '.join(blockers)} tenga posiciones"
+            until = self.storage.get_state(f"pause_until:{ins.category}") or 0.0
+            if ins.strike_limit > 0 and now < until:
+                limit = datetime.fromtimestamp(until, tz=timezone.utc)
+                out[ins.category] = f"por strikes hasta {limit.isoformat(timespec='minutes')}"
+        return out
 
     def emergency_close_all(self, reason: str = "emergency_close") -> None:
         """Cierra inmediatamente todas las posiciones abiertas en el exchange."""
@@ -524,6 +635,7 @@ class Engine:
         )
         self.storage.record_closed_trade(trade)
         self.storage.delete_open_position(pos)   # ya no está abierta
+        self._register_strike(trade)
         self._save_cash()
         self.closed_trades.append(trade)
         head = f"{pos.category}/{pos.strategy_name}"

@@ -123,7 +123,10 @@ def test_engine_executes_emergency_close():
     config = MagicMock(spec=Config)
     config.risk = risk_cfg
     config.effective_db_path = MagicMock(return_value=":memory:")
-    
+    # El instrumento simulado no tiene reglas de pausa
+    config.instrument.return_value.strike_limit = 0
+    config.instrument.return_value.paused_while_open = []
+
     strategy_mock = MagicMock()
     # Mockear generate_signal para retornar HOLD para evitar nuevas entradas durante el test
     strategy_mock.generate_signal = MagicMock()

@@ -137,6 +137,12 @@ class Instrument:
     # Filtro de cierre fuerte (anti-mechas de rechazo)
     strong_close_filter: bool = False
     strong_close_threshold: float = 0.75   # cierre debe estar en el 25% superior del rango
+    # Reglas de pausa de la cabeza (solo afectan a ENTRADAS nuevas; las posiciones
+    # abiertas se siguen gestionando)
+    strike_limit: int = 0                  # nº de stops con pérdida que pausan la cabeza (0 = desactivado)
+    strike_window_days: float = 7.0        # ventana en la que se cuentan esos stops
+    strike_pause_days: float = 30.0        # duración de la pausa
+    paused_while_open: list[str] = field(default_factory=list)  # cabezas cuyas posiciones abiertas pausan a esta
 
 
 @dataclass
@@ -192,6 +198,15 @@ class Config:
                 )
             if ins.stop_loss_pct <= 0 or ins.take_profit_pct <= 0:
                 raise ValueError(f"SL/TP de {ins.symbol} deben ser > 0")
+            if ins.strike_limit < 0 or ins.strike_window_days <= 0 or ins.strike_pause_days <= 0:
+                raise ValueError(f"strike_pause de {ins.category} no es válido")
+        heads = {ins.category for ins in self.instruments}
+        for ins in self.instruments:
+            unknown = [h for h in ins.paused_while_open if h not in heads or h == ins.category]
+            if unknown:
+                raise ValueError(
+                    f"paused_while_open de {ins.category} referencia cabezas no válidas: {unknown}"
+                )
 
     def symbols(self) -> list[str]:
         return [ins.symbol for ins in self.instruments]
@@ -224,6 +239,7 @@ def _build_instruments(
         params = cat.get("params") or {}
         overrides = cat.get("risk") or {}
         rs_cfg = cat.get("rs_selection") or {}
+        strike_cfg = cat.get("strike_pause") or {}
         for symbol in cat.get("symbols") or []:
             if symbol in seen:
                 raise ValueError(f"Símbolo duplicado en el universo: {symbol}")
@@ -254,6 +270,10 @@ def _build_instruments(
                     rs_lookback_days=int(rs_cfg.get("lookback_days", 14)),
                     rs_hysteresis_pct=float(rs_cfg.get("hysteresis_pct", 5.0)),
                     macro_btc_filter=bool(cat.get("macro_btc_filter", False)),
+                    strike_limit=int(strike_cfg.get("strikes", 0)),
+                    strike_window_days=float(strike_cfg.get("window_days", 7)),
+                    strike_pause_days=float(strike_cfg.get("pause_days", 30)),
+                    paused_while_open=list(cat.get("paused_while_open") or []),
                     use_atr_trailing=bool(overrides.get("use_atr_trailing", cat.get("use_atr_trailing", False))),
                     atr_trailing_mult=float(overrides.get("atr_trailing_mult", cat.get("atr_trailing_mult", 3.0))),
                     volatility_sizing=bool(overrides.get("volatility_sizing", cat.get("volatility_sizing", False))),

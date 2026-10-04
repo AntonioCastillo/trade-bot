@@ -73,6 +73,13 @@ def render_daily_report_telegram(engine: Engine, config: Config) -> str:
         "",
     ]
 
+    try:
+        paused = engine.paused_heads()
+    except Exception:
+        paused = {}
+    if paused:
+        lines[-1:-1] = [f"⏸️ <b>En pausa:</b> {head} ({why})" for head, why in paused.items()]
+
     # Posiciones abiertas desglosadas
     if engine.positions:
         lines.append("🔓 <b>POSICIONES ABIERTAS SPOT:</b>")
