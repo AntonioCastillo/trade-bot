@@ -8,6 +8,7 @@ Uso:
     python scripts/manage.py sync-funding
     python scripts/manage.py close-carry [--dry-run]
     python scripts/manage.py report [db_path]
+    python scripts/manage.py export [db_path] [-o FILE]
     python scripts/manage.py verify-api [--usd USD] [--symbol SYMBOL]
     python scripts/manage.py backtest [--limit N] [--config PATH]
 """
@@ -57,6 +58,16 @@ def cmd_report(args: argparse.Namespace) -> None:
     report_main()
 
 
+def cmd_export(args: argparse.Namespace) -> None:
+    from export import main as export_main
+    sys.argv = [sys.argv[0]]
+    if args.db_path:
+        sys.argv.append(args.db_path)
+    if args.output:
+        sys.argv += ["-o", args.output]
+    export_main()
+
+
 def cmd_verify_api(args: argparse.Namespace) -> None:
     from verify_api import main as verify_main
     sys.argv = [sys.argv[0], str(args.usd), args.symbol]
@@ -94,6 +105,12 @@ def main() -> None:
     p_rep = subparsers.add_parser("report", help="Genera el informe de rendimiento histórico")
     p_rep.add_argument("db_path", nargs="?", default=None, help="Ruta a la base de datos (opcional)")
     p_rep.set_defaults(func=cmd_report)
+
+    # export
+    p_exp = subparsers.add_parser("export", help="Exporta las operaciones cerradas a CSV")
+    p_exp.add_argument("db_path", nargs="?", default=None, help="Ruta a la base de datos (opcional)")
+    p_exp.add_argument("-o", "--output", default=None, help="Fichero CSV de salida (def: data/closed_trades.csv)")
+    p_exp.set_defaults(func=cmd_export)
 
     # verify-api
     p_ver = subparsers.add_parser("verify-api", help="Verifica las credenciales API con una micro-orden de prueba")

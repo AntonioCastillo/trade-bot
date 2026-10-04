@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from tradebot.models import ClosedTrade, Side
-from tradebot.reporting import render_report
+from tradebot.reporting import export_trades_csv, render_report
 from tradebot.storage import Storage
 
 
@@ -50,6 +50,27 @@ def test_render_report_contains_sections():
 def test_render_report_empty():
     st = Storage(":memory:")
     assert "Todavía no hay operaciones" in render_report(st)
+
+
+def test_export_trades_csv(tmp_path):
+    st = Storage(":memory:")
+    st.record_closed_trade(_trade("BTC/USDT", "majors", 10))
+    st.record_closed_trade(_trade("DOGE/USDT", "memecoins", -5))
+    out = tmp_path / "sub" / "trades.csv"
+
+    assert export_trades_csv(st, str(out)) == 2
+    lines = out.read_text(encoding="utf-8").splitlines()
+    header = lines[0].split(",")
+    for col in ("symbol", "category", "pnl_abs", "exit_reason", "opened_at", "closed_at"):
+        assert col in header
+    assert len(lines) == 3
+    assert "DOGE/USDT" in lines[2]
+
+
+def test_export_trades_csv_empty(tmp_path):
+    out = tmp_path / "trades.csv"
+    assert export_trades_csv(Storage(":memory:"), str(out)) == 0
+    assert out.read_text(encoding="utf-8") == ""
 
 
 def test_funding_payments_storage():

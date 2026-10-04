@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 import math
+from pathlib import Path
 
 from .metrics import metrics_from_pnls
 from .storage import Storage
@@ -75,3 +77,17 @@ def render_report(
     lines.append("")
     lines.append("Nota: rendimiento pasado NO garantiza resultados futuros.")
     return "\n".join(lines)
+
+
+def export_trades_csv(storage: Storage, path: str) -> int:
+    """Vuelca TODAS las operaciones cerradas (todas las columnas) a un CSV.
+    Devuelve el número de operaciones exportadas."""
+    rows = storage.all_trades()
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if rows:
+            writer.writerow(rows[0].keys())
+            writer.writerows(tuple(r) for r in rows)
+    return len(rows)
