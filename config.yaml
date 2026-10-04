@@ -9,6 +9,8 @@ lookback: 300          # nº de velas a mantener para los indicadores
 # LA HIDRA MULTICABEZA: cada cabeza especializada en su régimen y sus símbolos.
 universe:
   # 🟢 Rupturas Rápidas (Captura despegues alcistas verticales)
+  # Símbolos FIJOS desde 2026-10-04: la rotación RS no aportó en la simulación con
+  # mecánica real (ver docs/AUDIT_2026-10.md). El bloque rs_selection se conserva apagado.
   - name: breakout_diario
     symbols: [SOL/USDT, AVAX/USDT]
     strategy: breakout
@@ -20,7 +22,7 @@ universe:
     macro_btc_filter: true
     strong_close_filter: true
     risk:
-      stop_loss_pct: 0.08
+      stop_loss_pct: 0.03              # stop inicial corto: solo actúa hasta la venta parcial (luego breakeven)
       take_profit_pct: 0.30
       trailing_stop_pct: 0.10
       partial_take_profit_pct: 0.05
@@ -29,13 +31,14 @@ universe:
       volatility_sizing: true
       position_size_pct: 0.20
     rs_selection:
-      enabled: true
+      enabled: false
       top_k: 2
       lookback_days: 14
       hysteresis_pct: 5.0
       pool: [SOL/USDT, AVAX/USDT, BNB/USDT, ADA/USDT, LINK/USDT, LTC/USDT, NEAR/USDT, XRP/USDT, DOGE/USDT, ETH/USDT, DOT/USDT, ATOM/USDT, UNI/USDT, TRX/USDT, SUI/USDT, HNT/USDT, AR/USDT, RENDER/USDT, TAO/USDT, TIA/USDT, INJ/USDT, KAS/USDT, SEI/USDT, FET/USDT, PYTH/USDT]
 
   # 🟢 Tendencia Confirmada (Momentum sólido con filtro EMA/ATR)
+  # Símbolos FIJOS desde 2026-10-04 (ver breakout_diario).
   - name: momentum_diario
     symbols: [BNB/USDT, ADA/USDT]
     strategy: momentum
@@ -51,7 +54,7 @@ universe:
       bidirectional: false
       min_bb_width: 0.02
     risk:
-      stop_loss_pct: 0.08
+      stop_loss_pct: 0.03              # stop inicial corto: solo actúa hasta la venta parcial (luego breakeven)
       take_profit_pct: 0.30
       trailing_stop_pct: 0.10
       partial_take_profit_pct: 0.05
@@ -60,7 +63,7 @@ universe:
       volatility_sizing: true
       position_size_pct: 0.20
     rs_selection:
-      enabled: true
+      enabled: false
       top_k: 2
       lookback_days: 14
       hysteresis_pct: 5.0
@@ -80,9 +83,9 @@ universe:
     risk:
       stop_loss_pct: 0.06
       take_profit_pct: 0.20
-      trailing_stop_pct: 0.08
+      trailing_stop_pct: 0.08           # trailing FIJO del 8% (el ATR x3 en 4h quedaba a ~4-5% y cortaba pronto)
       partial_take_profit_pct: 0.05
-      use_atr_trailing: true
+      use_atr_trailing: false
       atr_trailing_mult: 3.0
       volatility_sizing: true
       position_size_pct: 0.15
@@ -131,7 +134,7 @@ universe:
     symbols: [XRP/USDT, DOGE/USDT, TRX/USDT, UNI/USDT]
     strategy: capitulation
     timeframe: 4h
-    macro_btc_filter: true
+    macro_btc_filter: false           # el pánico casi siempre llega con BTC bajo su EMA50: el filtro bloqueaba 38 de 43 señales
     params:
       rsi_period: 14
       rsi_oversold: 20.0
@@ -141,7 +144,7 @@ universe:
     risk:
       stop_loss_pct: 0.05
       take_profit_pct: 0.15
-      trailing_stop_pct: 0.03
+      trailing_stop_pct: 0.0            # sin trailing: el 3% cerraba los rebotes en ~1.5 h (ver docs/AUDIT_2026-10.md)
       position_size_pct: 0.20
 
 risk:

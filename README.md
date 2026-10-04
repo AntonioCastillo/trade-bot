@@ -63,6 +63,8 @@ El bot opera como un **orquestador de cartera asíncrono** sobre una cuenta comp
 
 ## 🔄 3. Selección Dinámica por Fuerza Relativa (RS vs BTC)
 
+> **Apagada desde 2026-10-04** (`rs_selection.enabled: false`): `breakout_diario` opera SOL/AVAX y `momentum_diario` BNB/ADA de forma fija. Motivos en [docs/AUDIT_2026-10.md](docs/AUDIT_2026-10.md). El mecanismo se conserva y funcionaba así:
+
 Para las cabezas de tendencia (`breakout` y `momentum`), el bot no opera símbolos estáticos: **escanea el mercado cada 4 Horas** (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC):
 *   **Fórmula:** $\text{RS} = \text{Retorno}(14\text{d}) - \text{Retorno}_{\text{BTC}}(14\text{d})$
 *   **Pool:** 25 altcoins líquidas de KuCoin.
@@ -154,10 +156,18 @@ python scripts/report.py
 
 # 4. Limpiar operaciones históricas o de prueba
 python scripts/cleanup_legacy.py
+
+# 5. Exportar las operaciones cerradas a CSV
+python scripts/manage.py export
+
+# 6. Simular las cabezas con la mecánica real del bot (salidas intradía)
+python scripts/livesim.py
 ```
 
 ---
 
 ## 📚 7. Documentación Adicional
 - 📖 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Manual técnico institucional con fórmulas, modelos de gestión de riesgo y arquitectura detallada.
+- 🔎 [docs/AUDIT_2026-10.md](docs/AUDIT_2026-10.md): Auditoría de viabilidad de octubre de 2026 (operaciones reales frente a 31 meses de simulación con mecánica real).
+- 📓 [docs/LOGBOOK.md](docs/LOGBOOK.md): Bitácora de cambios y decisiones.
 - 🚀 [deploy/DEPLOY.md](deploy/DEPLOY.md): Guía paso a paso de configuración y despliegue en servidor VPS.

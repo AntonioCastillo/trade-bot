@@ -4,10 +4,36 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-04 | Auditoría con Simulador de Mecánica Real: Símbolos Fijos en Cabezas Diarias y Trailing 8% en Volumen Explosivo](#2026-10-04--auditoría-con-simulador-de-mecánica-real-símbolos-fijos-en-cabezas-diarias-y-trailing-8-en-volumen-explosivo)
 * [2026-10-03 | Rebalanceo de Ratio Riesgo/Beneficio y Stop Loss Estructural en Grid Lateral](#2026-10-03--rebalanceo-de-ratio-riesgobeneficio-y-stop-loss-estructural-en-grid-lateral)
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-04 | Auditoría con Simulador de Mecánica Real: Símbolos Fijos en Cabezas Diarias y Trailing 8% en Volumen Explosivo
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml), [`scripts/livesim.py`](../scripts/livesim.py), [`scripts/livesim_trend.py`](../scripts/livesim_trend.py), [`scripts/export.py`](../scripts/export.py), [`scripts/manage.py`](../scripts/manage.py), [`src/tradebot/reporting.py`](../src/tradebot/reporting.py), [`tests/test_storage_reporting.py`](../tests/test_storage_reporting.py), [`docs/AUDIT_2026-10.md`](AUDIT_2026-10.md)
+* **Motivo / Justificación Empírica:**
+  * Se pidió analizar por qué `breakout_diario` y `momentum_diario` no aprovecharon la subida de septiembre y, a partir de ahí, la viabilidad de todas las cabezas.
+  * El backtester del proyecto solo evalúa salidas al cierre de vela; el bot en vivo las evalúa cada 60 s y entra a mercado horas después de la señal tras una rotación. Se escribieron simuladores que replican esa mecánica y se validaron contra las 35 operaciones reales exportadas del VPS.
+  * Resultado en 31 meses (2024-03 → 2026-10): `grid_lateral` **−38.7%** del equity (PF 0.67) sin que ninguna variante lo arregle; cabezas diarias con rotación ≈ 0; `volumen_explosivo` +3.5%; `reversion_rango` −1.5%; `capitulacion` 5 operaciones. Todas ganan en meses alcistas y pierden o quedan planas en el resto. El periodo en vivo fue de los más alcistas de la serie para estas monedas.
+  * Informe completo, con tablas, variantes y limitaciones: [`docs/AUDIT_2026-10.md`](AUDIT_2026-10.md).
+* **Cambios Implementados:**
+  1. **Cabezas diarias con símbolos fijos:** `rs_selection.enabled: false` en `breakout_diario` (SOL, AVAX) y `momentum_diario` (BNB, ADA). Simulado: +9.1% y +4.7% frente a +3.1% y −0.1% con rotación. Elimina además las entradas tardías y la colisión de símbolos.
+  2. **Trailing fijo del 8% en `volumen_explosivo`:** `use_atr_trailing: false`. Simulado: +12.5% (PF 1.68) frente a +3.5% (PF 1.17), positivo en las dos mitades del periodo.
+  3. **Stop inicial del 3% en las dos cabezas diarias** (antes 8%). Solo actúa hasta la venta parcial; después el stop pasa al precio de entrada. Motivo: la ganadora típica de estas cabezas es +2.1% (parcial + breakeven) y cada pérdida completa costaba 3–4 de ellas. Simulado: `momentum_diario` +8.2% frente a +4.7%; `breakout_diario` +8.9% frente a +9.1% con sus símbolos y +8.5% frente a −2.8% en 17 símbolos. En `volumen_explosivo` acortar el stop empeora y no se tocó.
+  4. **`capitulacion` sin filtro macro de BTC y sin trailing** (`macro_btc_filter: false`, `trailing_stop_pct: 0.0`; quedan stop 5% y objetivo 15%). El filtro bloqueaba 38 de las 43 señales de 31 meses, porque el pánico en una moneda casi siempre coincide con BTC bajo su EMA50; y el trailing del 3% cerraba los rebotes con una duración mediana de 1.5 h. Simulado: +11.5% (38 operaciones) frente a +1.3% (5 operaciones). **Cambio pedido por el operador con una reserva seria:** el resultado no se mantiene (+16.4% en la primera mitad, −4.2% en la segunda), la caída máxima sube de 1.6% a 8.8% y en meses bajistas pierde (−0.72% al mes). Es la única cabeza que ahora puede comprar con BTC en tendencia bajista.
+  5. **`manage.py export`:** vuelca `closed_trades` a CSV con todas las columnas (commit `27d9d54`).
+  6. **`scripts/livesim.py` y `scripts/livesim_trend.py`:** simuladores con mecánica real, leen las cabezas de `config.yaml`.
+* **Defectos Detectados (ver sección 7 del informe):**
+  * Colisión de símbolos entre cabezas (el motor resuelve cabeza y estrategia solo por símbolo): **latente**, no se manifiesta con la rotación apagada.
+  * `max_concurrent_per_symbol` dentro de `risk:` se ignora (el grid corre con 1 por símbolo): **sin arreglar a propósito**, corregirlo empeora el resultado simulado.
+  * La operación NEAR +46% del grid (18-sep) se debió, por coincidencia de fechas con `c13026b`, a una venta que estuvo fallando dos días.
+* **Pendiente de Decisión del Operador:** mantener, reducir o apagar `grid_lateral` y `reversion_rango`. Los datos no respaldan su tamaño actual.
+* **Reservas:** SOL/AVAX/BNB/ADA se eligieron tras verlos funcionar (sesgo de selección; en 17 símbolos la estrategia no gana). Las variantes se exploraron sobre los mismos datos: son hipótesis.
+* **Verificación:** 228 tests pasando. Simuladores contrastados con las operaciones reales del grid (20 de 20), `volumen_explosivo` (2 posiciones) y las tres entradas por rotación.
 
 ---
 

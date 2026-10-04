@@ -1,6 +1,8 @@
 # 🧠 ESTADO DEL PROYECTO Y GUÍA DE ONBOARDING (Cero Contexto)
 
 > **Documento para Desarrolladores y Agentes de IA:**  
+> ⚠️ **Actualización 2026-10-04:** antes de fiarse de las cifras de rendimiento de este documento, leer [`AUDIT_2026-10.md`](AUDIT_2026-10.md). La simulación con mecánica real contradice la lectura optimista del periodo en vivo (el grid pierde un 38.7% en 31 meses).
+>
 > Este documento contiene el contexto completo, las decisiones arquitectónicas, el historial evolutivo, la estructura del código y los resultados empíricos del proyecto **tradebot** a fecha de **Septiembre de 2026**. Cualquier desarrollador o agente que inicie una sesión sin historial previo puede comprender el 100% del sistema leyendo este archivo.
 
 ---
@@ -34,7 +36,8 @@ En lugar de forzar una única estrategia para todos los mercados, el bot desplie
 5. **`volumen_explosivo` (4H):** Detección de acumulación de ballenas con volumen > 2.0x.
 6. **`capitulacion` (4H):** Francotirador de pánicos extremos (RSI < 20) para comprar rebotes en "V".
 
-### C) Escáner Continuo de Fuerza Relativa (RS vs BTC en 4H)
+### C) Escáner Continuo de Fuerza Relativa (RS vs BTC en 4H) — **APAGADO desde 2026-10-04**
+*   `breakout_diario` opera SOL/AVAX y `momentum_diario` BNB/ADA de forma fija (`rs_selection.enabled: false`). La rotación no aportó en la simulación, provocaba entradas tardías y una colisión de símbolos entre cabezas. El código se conserva; lo siguiente describe cómo funcionaba:
 *   Las cabezas de tendencia no usan activos fijos: un evaluador programado en `daemon.py` calcula la **Fuerza Relativa contra Bitcoin a 14 días** cada 4 horas (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC).
 *   Selecciona automáticamente los **2 activos líderes** de un pool de 25 altcoins líquidas y les asigna el capital.
 *   Incorpora un **filtro de histéresis del 5.0%** para evitar rotaciones excesivas por pequeñas fluctuaciones.
@@ -48,7 +51,7 @@ En lugar de forzar una única estrategia para todos los mercados, el bot desplie
 1. **Guarda Macro Bitcoin:** Si $\text{BTC} < \text{EMA 50 Diaria}$, todas las compras se bloquean y el bot se refugia en **100% USDT líquido**.
 2. **Toma Parcial 50% @ +5%:** Al llegar al +5% de ganancia, vende la mitad y asegura el dinero en caja.
 3. **Stop Loss a Breakeven Inmediato:** Tras la toma parcial, el Stop Loss restante se fija en el precio de entrada (Riesgo Cero).
-4. **Chandelier Trailing Stop:** Deja correr el 50% restante con un trailing stop dinámico basado en ATR.
+4. **Chandelier Trailing Stop:** Deja correr el 50% restante con un trailing stop dinámico basado en ATR (cabezas diarias). `volumen_explosivo` usa trailing fijo del 8% desde 2026-10-04.
 
 ---
 
@@ -90,6 +93,8 @@ src/tradebot/
 
 ## 📊 4. Rendimiento Empírico Auditado por Cabezas
 
+> Tabla a 18-sep-2026. Las cifras a 4-oct-2026 (35 operaciones, +96.50 USDT) y su contraste con 31 meses de simulación están en [`AUDIT_2026-10.md`](AUDIT_2026-10.md). El calificativo "generador de caja constante" del grid no se sostiene fuera de meses alcistas.
+
 | Cabeza / Módulo | Estrategia | Trades | Victorias | Win Rate | P&L Realizado | Estado y Rol |
 |---|---|:---:|:---:|:---:|:---:|---|
 | 👑 **`grid_lateral`** | Rejilla 4H | 9 | 9 | **100.0%** | **+\$11.54 USDT** | Generador de caja constante en rangos. |
@@ -123,6 +128,12 @@ python scratch/diagnose_market.py
 
 # 3. Ver informe de base de datos
 python scripts/report.py
+
+# 4. Exportar las operaciones cerradas a CSV
+python scripts/manage.py export
+
+# 5. Simular las cabezas con la mecánica real antes de cambiar parámetros
+python scripts/livesim.py --head grid_lateral
 ```
 
 ### Telemetría en Tiempo Real:

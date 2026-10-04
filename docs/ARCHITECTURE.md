@@ -69,6 +69,8 @@ Cada cabeza está diseñada para explotar una ineficiencia o régimen específic
 
 ## 3. Selección Dinámica por Fuerza Relativa (RS vs BTC)
 
+> **Apagada desde 2026-10-04** (`rs_selection.enabled: false`). Las cabezas diarias operan símbolos fijos. Si se reactiva, hay que excluir del pool los símbolos que ya tiene otra cabeza: el motor resuelve cabeza y estrategia solo por símbolo (ver [AUDIT_2026-10.md](AUDIT_2026-10.md), sección 7).
+
 Para las cabezas de tendencia (`breakout` y `momentum`), el bot no opera monedas estáticas, sino que **escanea automáticamente el mercado cada 4 Horas** (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC):
 
 $$\text{RS}_{\text{activo}} = \text{Retorno}_{\text{activo}}(14\text{d}) - \text{Retorno}_{\text{BTC}}(14\text{d})$$
@@ -88,7 +90,7 @@ $$\text{RS}_{\text{activo}} = \text{Retorno}_{\text{activo}}(14\text{d}) - \text
 3. **Stop Loss Automático a Breakeven:**
    - Inmediatamente tras la toma parcial, el Stop Loss del 50% restante se mueve al **precio de entrada (Breakeven)**, convirtiendo la operación en **riesgo cero**.
 4. **Chandelier Trailing Stop:**
-   - El 50% restante cabalga la tendencia con un trailing stop dinámico basado en ATR ($3 \times \text{ATR}$ o 10%) para maximizar ganancias.
+   - El 50% restante cabalga la tendencia con un trailing stop dinámico basado en ATR ($3 \times \text{ATR}$ o 10%) para maximizar ganancias. `volumen_explosivo` usa en su lugar un trailing fijo del 8% desde 2026-10-04.
 5. **Cortafuegos de Pérdida Diaria:**
    - Si el drawdown intradía supera el límite configurado (`max_daily_loss_pct`), el bot pausa la apertura de nuevas posiciones hasta las 00:00 UTC.
 
