@@ -50,6 +50,43 @@ def test_no_duplicate_position_same_symbol():
     assert decision.order is None
 
 
+def _held(rm, symbol, cost):
+    ins = make_instrument(symbol=symbol)
+    return rm.build_position(ins, Side.BUY, cost / 100.0, 100.0, entry_fee=0.0, reason="x")
+
+
+def test_exposure_cap_on_free_cash_blocks_fourth_position():
+    # Histórico: con 49 invertidos y 51 libres, una entrada del 12% del libre ya
+    # supera el 80% SOBRE EL LIBRE -> rechazada aunque solo haya un 55% del equity expuesto.
+    rm = _risk(max_open_positions=8, max_total_exposure_pct=0.80)
+    held = [_held(rm, s, c) for s, c in (("A/USDT", 20.0), ("B/USDT", 16.0), ("C/USDT", 13.0))]
+    sig = Signal(SignalType.BUY, "BTC/USDT", price=100.0)
+    decision = rm.evaluate_entry(sig, make_instrument(position_size_pct=0.12), balance=51.0,
+                                 open_positions=held, equity=100.0)
+    assert decision.order is None
+
+
+def test_exposure_cap_on_equity_allows_it_and_still_caps():
+    rm = _risk(max_open_positions=8, max_total_exposure_pct=0.80, exposure_on_equity=True)
+    held = [_held(rm, s, c) for s, c in (("A/USDT", 20.0), ("B/USDT", 16.0), ("C/USDT", 13.0))]
+    sig = Signal(SignalType.BUY, "BTC/USDT", price=100.0)
+    ins = make_instrument(position_size_pct=0.12)
+
+    ok = rm.evaluate_entry(sig, ins, balance=51.0, open_positions=held, equity=100.0)
+    assert ok.order is not None
+    assert ok.order.amount == pytest.approx(51.0 * 0.12 / 100.0)   # el tamaño sigue saliendo del libre
+
+    # Con 78 ya invertidos, una entrada más superaría el 80% del equity -> rechazada.
+    full = held + [_held(rm, "D/USDT", 29.0)]
+    blocked = rm.evaluate_entry(sig, make_instrument(position_size_pct=0.20), balance=22.0,
+                                open_positions=full, equity=100.0)
+    assert blocked.order is None
+
+    # Sin equity informado se usa el libre, como antes.
+    fallback = rm.evaluate_entry(sig, ins, balance=51.0, open_positions=held)
+    assert fallback.order is None
+
+
 def test_hold_signal_produces_no_order():
     rm = _risk()
     ins = make_instrument()

@@ -372,7 +372,14 @@ class Engine:
                 current_atr = 0.0
 
         balance = self.execution.get_balance()
-        decision = self.risk.evaluate_entry(signal, instrument, balance, self.positions, current_atr=current_atr)
+        # Equity = USDT libre + valor de mercado de las posiciones (sin otra consulta al exchange).
+        equity = balance + sum(
+            (1 if p.side is Side.BUY else -1) * self.last_prices.get(p.symbol, p.entry_price) * p.amount
+            for p in self.positions
+        )
+        decision = self.risk.evaluate_entry(
+            signal, instrument, balance, self.positions, current_atr=current_atr, equity=equity,
+        )
         if decision.order is None:
             logger.debug("[%s] entrada rechazada: %s", symbol, decision.reason)
             return

@@ -190,6 +190,8 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
                   entry_filter: Callable[[Instrument, pd.Timestamp], bool] | None = None,
                   portfolio_filter: Callable[[Instrument, pd.Timestamp, list[dict]], bool] | None = None,
                   on_close: Callable[[dict], None] | None = None,
+                  exposure_on_equity: bool | None = None,
+                  size_on_equity: bool = False,
                   ) -> tuple[pd.DataFrame, pd.Series]:
     """Simula un grupo de instrumentos con saldo compartido: una cabeza, o varias a
     la vez (así compiten por el USDT libre y los topes, como en real). Devuelve
@@ -199,7 +201,12 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
     `portfolio_filter(instrumento, hora, posiciones_abiertas)` lo mismo, pero viendo
     la cartera (cada posición es un dict con al menos `head` y `symbol`).
     `on_close(operación)` se llama al cerrar cada operación (para reglas con memoria,
-    p. ej. pausar una cabeza tras varios stops)."""
+    p. ej. pausar una cabeza tras varios stops).
+    `exposure_on_equity` es la base del tope de exposición (None = lo que diga
+    `risk.exposure_on_equity` en el config). `size_on_equity` mide una variante que
+    el bot no tiene: dimensionar sobre el equity total en vez de sobre el USDT libre."""
+    if exposure_on_equity is None:
+        exposure_on_equity = bool(getattr(config.risk, "exposure_on_equity", False))
     fee, slip = config.engine.fee_pct, config.engine.slippage_pct
     since = start - pd.Timedelta(days=WARMUP_DAYS)
     fine = {ins.symbol: candles(ins.symbol, "15m", since, refresh) for ins in instruments}
@@ -332,11 +339,16 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
             if sum(1 for p in positions if p["symbol"] == ins.symbol) >= ins.max_concurrent_per_symbol:
                 reject(ins, "símbolo ocupado")
                 continue
-            capital = cash * ins.position_size_pct
+            equity_now = cash + sum(p["amount"] * last_px[p["symbol"]] for p in positions)
+            capital = (equity_now if size_on_equity else cash) * ins.position_size_pct
             exposure = sum(p["entry"] * p["amount"] for p in positions)
             cap = config.risk.max_total_exposure_pct
-            if cap < 1.0 and cash > 0 and (exposure + capital) / cash > cap:
+            base = equity_now if exposure_on_equity else cash
+            if cap < 1.0 and base > 0 and (exposure + capital) / base > cap:
                 reject(ins, "tope de exposición")
+                continue
+            if capital > cash:
+                reject(ins, "sin saldo libre")
                 continue
             if ins.volatility_sizing and atr > 0:
                 factor = ins.volatility_ref_atr_pct / (atr / price)

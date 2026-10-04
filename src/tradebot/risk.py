@@ -145,7 +145,11 @@ class RiskManager:
         balance: float,
         open_positions: list[Position],
         current_atr: float = 0.0,
+        equity: float | None = None,
     ) -> RiskDecision:
+        """`balance` es el USDT libre (base del tamaño). `equity` es el valor total de
+        la cuenta; solo se usa como base del tope de exposición si
+        `exposure_on_equity` está activo."""
         if self._halted:
             return RiskDecision(None, f"bot detenido por gestión de riesgo ({self._halted_reason})")
         if signal.type is SignalType.HOLD:
@@ -164,11 +168,14 @@ class RiskManager:
                 p.entry_price * p.amount for p in open_positions
             )
             new_notional = balance * instrument.position_size_pct
-            if (current_exposure + new_notional) / balance > self.config.max_total_exposure_pct:
+            base = balance
+            if getattr(self.config, "exposure_on_equity", False) and equity is not None and equity > 0:
+                base = equity
+            if (current_exposure + new_notional) / base > self.config.max_total_exposure_pct:
                 return RiskDecision(
                     None,
                     f"exposición total superaría {self.config.max_total_exposure_pct:.0%} "
-                    f"({current_exposure + new_notional:.2f} / {balance:.2f})"
+                    f"({current_exposure + new_notional:.2f} / {base:.2f})"
                 )
 
         capital = balance * instrument.position_size_pct

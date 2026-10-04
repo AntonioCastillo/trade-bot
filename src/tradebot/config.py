@@ -22,6 +22,9 @@ class RiskConfig:
     max_daily_loss_pct: float = 0.10
     max_account_drawdown_pct: float = 0.15
     max_total_exposure_pct: float = 1.0  # 1.0 = sin límite; 0.80 = reserva 20% USDT
+    # Base del tope de exposición: False = USDT libre (histórico: en la práctica limita
+    # a 3-4 posiciones); True = equity total (USDT libre + valor de las posiciones).
+    exposure_on_equity: bool = False
 
 
 @dataclass

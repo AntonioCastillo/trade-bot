@@ -63,7 +63,7 @@ El bot opera como un **orquestador de cartera asíncrono** sobre una cuenta comp
 
 ## 🔄 3. Selección Dinámica por Fuerza Relativa (RS vs BTC)
 
-> **Desde 2026-10-04** las cabezas `breakout_diario` y `momentum_diario` están sustituidas por **`tendencia_alcista`** (1D; BTC, BNB, SOL): ruptura del máximo de 55 días, stop 6%, objetivo 50%, trailing fijo del 15%, sin venta parcial, tamaño 20%. `volumen_explosivo` usa trailing fijo del 8%, `reversion_rango` está desactivada (`enabled: false`), y `grid_lateral` tiene dos reglas de pausa (3 stops en 7 días → 30 días sin abrir; sin entradas mientras `tendencia_alcista` tenga posiciones). Detalle y mediciones en [docs/AUDIT_2026-10.md](docs/AUDIT_2026-10.md).
+> **Desde 2026-10-04** las cabezas `breakout_diario` y `momentum_diario` están sustituidas por **`tendencia_alcista`** (1D; BTC, BNB, SOL): ruptura del máximo de 55 días, stop 6%, objetivo 50%, trailing fijo del 15%, sin venta parcial, tamaño 20%. `volumen_explosivo` usa trailing fijo del 8% y opera 7 monedas (ETH, SUI, ADA, AVAX, ATOM, ALGO, ETC), el tope de exposición del 80% se mide sobre el equity total, `reversion_rango` está desactivada (`enabled: false`), y `grid_lateral` tiene dos reglas de pausa (3 stops en 7 días → 30 días sin abrir; sin entradas mientras `tendencia_alcista` tenga posiciones). Detalle y mediciones en [docs/AUDIT_2026-10.md](docs/AUDIT_2026-10.md).
 >
 > La rotación por fuerza relativa quedó **sin uso**: ninguna cabeza la activa. El mecanismo se conserva en el código y funcionaba así:
 

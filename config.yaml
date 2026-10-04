@@ -28,8 +28,10 @@ universe:
       position_size_pct: 0.20
 
   # 🟢 Explosión de Volumen (Detecta entradas de dinero institucional)
+  # Ampliada el 2026-10-04 con las 5 monedas que quedaron libres (docs/AUDIT_2026-10.md, 6.3).
+  # ATOM, ALGO y ETC también figuran en reversion_rango (desactivada): no reactivar aquella sin quitarlas de aquí.
   - name: volumen_explosivo
-    symbols: [ETH/USDT, SUI/USDT]
+    symbols: [ETH/USDT, SUI/USDT, ADA/USDT, AVAX/USDT, ATOM/USDT, ALGO/USDT, ETC/USDT]
     strategy: volume_surge
     timeframe: 4h
     macro_btc_filter: true
@@ -124,6 +126,7 @@ risk:
   max_daily_loss_pct: 0.10      # cortafuegos diario (10%)
   max_account_drawdown_pct: 0.15 # disyuntor global de cuenta (cierre de emergencia al 15%)
   max_total_exposure_pct: 0.80   # reserva mínima del 20% en USDT líquido
+  exposure_on_equity: true       # el tope se mide sobre el equity total, no sobre el USDT libre
 
 engine:
   poll_interval_seconds: 60     # ciclo cada 60s

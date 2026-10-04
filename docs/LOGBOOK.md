@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-04 | Tope de Exposición sobre el Equity y `volumen_explosivo` Ampliada a 7 Monedas](#2026-10-04--tope-de-exposición-sobre-el-equity-y-volumen_explosivo-ampliada-a-7-monedas)
 * [2026-10-04 | Validación desde 2022: `capitulacion` Restaurada y `reversion_rango` Desactivada](#2026-10-04--validación-desde-2022-capitulacion-restaurada-y-reversion_rango-desactivada)
 * [2026-10-04 | Reglas de Pausa por Cabeza: Strikes y Pausa Mientras Otra Cabeza Tiene Posiciones](#2026-10-04--reglas-de-pausa-por-cabeza-strikes-y-pausa-mientras-otra-cabeza-tiene-posiciones)
 * [2026-10-04 | Nueva Cabeza `tendencia_alcista` (BTC, BNB, SOL) en Sustitución de las Cabezas Diarias](#2026-10-04--nueva-cabeza-tendencia_alcista-btc-bnb-sol-en-sustitución-de-las-cabezas-diarias)
@@ -12,6 +13,22 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-04 | Tope de Exposición sobre el Equity y `volumen_explosivo` Ampliada a 7 Monedas
+
+* **Archivos Afectados:** [`src/tradebot/risk.py`](../src/tradebot/risk.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/config.py`](../src/tradebot/config.py), [`scripts/livesim.py`](../scripts/livesim.py), [`config.yaml`](../config.yaml), [`tests/test_risk.py`](../tests/test_risk.py)
+* **Motivo / Petición del Usuario:**
+  * Se buscaban mejoras que afectaran al P&L. El bot tenía invertido de media un 23% del equity: el tope de exposición se medía sobre el USDT libre (en la práctica, 3–4 posiciones como máximo) y `volumen_explosivo` solo operaba ETH y SUI.
+  * Se midieron once variantes desde 2022 (tabla en [`AUDIT_2026-10.md`](AUDIT_2026-10.md), sección 6.3). El operador eligió la opción 10.
+* **Cambios Implementados:**
+  1. **`risk.exposure_on_equity`** (nuevo, `false` por defecto): con `true`, `RiskManager.evaluate_entry` compara la exposición con el equity total en vez de con el USDT libre. El motor le pasa el equity (libre + valor de mercado de las posiciones, sin consulta adicional al exchange). El tamaño de la posición sigue calculándose sobre el libre.
+  2. **`config.yaml`:** `exposure_on_equity: true` y `volumen_explosivo` con ETH, SUI, ADA, AVAX, ATOM, ALGO y ETC.
+  3. **`livesim.py`** aplica por defecto la base de exposición que diga el config.
+* **Resultado simulado:** +162.0% desde 2022 (caída máx. 14.1%) frente a +113.6% (12.4%); +68.2% en 31 meses frente a +42.0%.
+* **Reservas:** mejora apoyada sobre todo en el periodo reciente (fuera de muestra: +59.3% frente a +52.3%, con caída del 12.0% frente al 6.9%); la exposición simultánea puede acercarse al 80% del equity; aplicado antes de tener operaciones reales del diseño nuevo, contra la recomendación de esperar.
+* **Verificación:** 244 tests pasando (2 nuevos en `tests/test_risk.py`); `livesim.py --combined` con el config final reproduce el +162.0%.
 
 ---
 

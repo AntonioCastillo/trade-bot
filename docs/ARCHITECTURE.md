@@ -95,7 +95,8 @@ $$\text{RS}_{\text{activo}} = \text{Retorno}_{\text{activo}}(14\text{d}) - \text
    - El 50% restante cabalga la tendencia con un trailing stop dinámico basado en ATR ($3 \times \text{ATR}$ o 10%) para maximizar ganancias. `volumen_explosivo` usa en su lugar un trailing fijo del 8% desde 2026-10-04.
 5. **Reglas de Pausa por Cabeza (desde 2026-10-04):**
    - `strike_pause`: tras N stops con pérdida en una ventana de días, la cabeza deja de abrir posiciones durante un periodo. `paused_while_open`: la cabeza no abre mientras otra indicada tenga posiciones.
-   - Solo bloquean entradas nuevas; el estado se guarda en la tabla `state` y sobrevive a reinicios. Activas en `grid_lateral` (3 stops en 7 días → 30 días; pausa mientras `tendencia_alcista` tenga posiciones).
+   - Solo bloquean entradas nuevas; el estado se guarda en la tabla `state` y sobrevive a reinicios.
+   - **Tope de exposición (80%):** desde 2026-10-04 se mide sobre el equity total (`risk.exposure_on_equity: true`), no sobre el USDT libre; el tamaño de cada posición sigue saliendo del libre. Activas en `grid_lateral` (3 stops en 7 días → 30 días; pausa mientras `tendencia_alcista` tenga posiciones).
 6. **Cortafuegos de Pérdida Diaria:**
    - Si el drawdown intradía supera el límite configurado (`max_daily_loss_pct`), el bot pausa la apertura de nuevas posiciones hasta las 00:00 UTC.
 
