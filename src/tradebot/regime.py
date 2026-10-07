@@ -50,15 +50,17 @@ def classify_regime(
     return TRENDING if adx_val >= trend_adx else RANGING
 
 
-def is_btc_macro_bullish(
+def is_above_daily_ema(
     exchange: any,
-    symbol: str = "BTC/USDT",
-    ema_period: int = 50,
+    symbol: str,
+    ema_period: int,
     timeframe: str = "1d",
 ) -> bool:
-    """Verifica si Bitcoin (BTC/USDT) se encuentra en tendencia macro alcista (Cierre >= EMA50 diaria).
-    
-    Si la consulta falla por red, devuelve True por defecto para no bloquear la operativa.
+    """¿Está `symbol` en o por encima de su EMA de `ema_period` velas? La vela en
+    formación cuenta, así que compara el precio actual con la media al momento.
+
+    Sin exchange (backtests), sin datos suficientes o si la consulta falla, devuelve
+    True para no bloquear la operativa.
     """
     if exchange is None:
         return True
@@ -67,8 +69,20 @@ def is_btc_macro_bullish(
         if candles is None or len(candles) < ema_period:
             return True
         close = candles["close"]
-        ema50 = float(indicators.ema(close, ema_period).iloc[-1])
-        last_price = float(close.iloc[-1])
-        return last_price >= ema50
+        ema = float(indicators.ema(close, ema_period).iloc[-1])
+        return float(close.iloc[-1]) >= ema
     except Exception:
         return True
+
+
+def is_btc_macro_bullish(
+    exchange: any,
+    symbol: str = "BTC/USDT",
+    ema_period: int = 50,
+    timeframe: str = "1d",
+) -> bool:
+    """Verifica si Bitcoin (BTC/USDT) se encuentra en tendencia macro alcista (Cierre >= EMA50 diaria).
+
+    Si la consulta falla por red, devuelve True por defecto para no bloquear la operativa.
+    """
+    return is_above_daily_ema(exchange, symbol, ema_period, timeframe)

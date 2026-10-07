@@ -290,6 +290,7 @@ class Engine:
                     rs_lookback_days=sample_ins.rs_lookback_days,
                     rs_hysteresis_pct=sample_ins.rs_hysteresis_pct,
                     macro_btc_filter=sample_ins.macro_btc_filter,
+                    asset_trend_ema=sample_ins.asset_trend_ema,
                     use_atr_trailing=sample_ins.use_atr_trailing,
                     atr_trailing_mult=sample_ins.atr_trailing_mult,
                     volatility_sizing=sample_ins.volatility_sizing,
@@ -332,6 +333,14 @@ class Engine:
             from .regime import is_btc_macro_bullish
             if not is_btc_macro_bullish(self.exchange):
                 logger.info("[%s] Compras pausadas en %s (Filtro Macro BTC: BTC < EMA50)", head, symbol)
+                return
+
+        # Filtro de tendencia de la propia moneda: precio >= su EMA diaria de N velas.
+        trend_ema = getattr(instrument, "asset_trend_ema", 0)
+        if isinstance(trend_ema, (int, float)) and trend_ema > 0:
+            from .regime import is_above_daily_ema
+            if not is_above_daily_ema(self.exchange, symbol, int(trend_ema)):
+                logger.info("[%s] Entrada en %s omitida: precio bajo su EMA%d diaria", head, symbol, int(trend_ema))
                 return
 
         # Filtro de régimen: la cabeza solo entra si el mercado le favorece.

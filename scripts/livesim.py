@@ -7,7 +7,8 @@ el daemon hace otra cosa, y eso cambia el resultado:
     (aquí: sobre velas de 15 min, mirando máximo y mínimo);
   - el tamaño es un % del USDT LIBRE, con tope por símbolo, global y de exposición;
   - filtro macro de BTC (precio >= EMA50 diaria) y de cierre fuerte si la cabeza los usa;
-  - reglas de pausa de la cabeza (`strike_pause` y `paused_while_open`).
+  - reglas de pausa de la cabeza (`strike_pause` y `paused_while_open`) y filtro de
+    tendencia de la propia moneda (`asset_trend_ema`).
 
 Por defecto cada cabeza se simula SOLA; con --combined se simulan todas juntas,
 compitiendo por el saldo libre y los topes como en real. Lee las cabezas de
@@ -217,6 +218,10 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
     if any(ins.macro_btc_filter for ins in instruments):
         macro = MacroFilter(candles(BTC, "4h", since - pd.Timedelta(days=90), refresh))
 
+    # Filtro de tendencia de la propia moneda (misma media que el motor, vela en formación incluida).
+    asset_trend = {ins.symbol: MacroFilter(fine[ins.symbol], ins.asset_trend_ema)
+                   for ins in instruments if ins.asset_trend_ema > 0}
+
     signals_at: dict[pd.Timestamp, list] = {}
     for ins in instruments:
         for t, price, stop, take, atr in head_signals(ins, fine[ins.symbol], config.lookback - 1):
@@ -328,6 +333,9 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
                 reject(ins, "pausa por strikes")
                 continue
             if ins.macro_btc_filter and macro is not None and not macro.bullish(t):
+                continue
+            if ins.symbol in asset_trend and not asset_trend[ins.symbol].bullish(t):
+                reject(ins, "tendencia de la moneda")
                 continue
             if entry_filter is not None and not entry_filter(ins, t):
                 continue

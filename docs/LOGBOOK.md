@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-07 | Filtro de Tendencia de la Propia Moneda en el Grid (EMA20 Diaria)](#2026-10-07--filtro-de-tendencia-de-la-propia-moneda-en-el-grid-ema20-diaria)
 * [2026-10-07 | Medición del Deslizamiento de Stops y Sondeo Rápido de Posiciones Abiertas](#2026-10-07--medición-del-deslizamiento-de-stops-y-sondeo-rápido-de-posiciones-abiertas)
 * [2026-10-04 | Tope de Exposición sobre el Equity y `volumen_explosivo` Ampliada a 7 Monedas](#2026-10-04--tope-de-exposición-sobre-el-equity-y-volumen_explosivo-ampliada-a-7-monedas)
 * [2026-10-04 | Validación desde 2022: `capitulacion` Restaurada y `reversion_rango` Desactivada](#2026-10-04--validación-desde-2022-capitulacion-restaurada-y-reversion_rango-desactivada)
@@ -14,6 +15,23 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-07 | Filtro de Tendencia de la Propia Moneda en el Grid (EMA20 Diaria)
+
+* **Archivos Afectados:** [`src/tradebot/regime.py`](../src/tradebot/regime.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/config.py`](../src/tradebot/config.py), [`scripts/livesim.py`](../scripts/livesim.py), [`config.yaml`](../config.yaml), [`tests/test_asset_trend.py`](../tests/test_asset_trend.py)
+* **Motivo / Petición del Usuario:**
+  * El operador señaló que el grid compra bajadas sin mirar la tendencia de la moneda: el bot solo filtraba por BTC, y el ADX mide fuerza pero no dirección.
+  * Medido con el conjunto completo desde 2022 ([`AUDIT_2026-10.md`](AUDIT_2026-10.md), sección 6.5): exigir que la moneda esté sobre su EMA20 diaria sube el acierto del grid del 67% al 71% y su relación ganancias/pérdidas de 0,71 a 0,78, en los dos tramos y con los dos niveles de deslizamiento. El conjunto pasa de +94,5% a +103,9% (deslizamiento 1%) y de +162,3% a +170,9% (0,2%).
+  * Las medias largas (50, 100) empeoran la señal del grid, y en `volumen_explosivo` cualquier filtro de tendencia resta (de +33,6 a entre +17 y −3 puntos): no se aplicó ahí.
+* **Cambios Implementados:**
+  1. `regime.is_above_daily_ema(exchange, symbol, periodo)`: ¿está el precio en o por encima de su EMA diaria, con la vela en formación incluida? `is_btc_macro_bullish` pasa a usarla. Sin exchange, sin datos o con fallo de red devuelve `True` (no bloquea).
+  2. Opción por cabeza **`asset_trend_ema`** (0 = desactivado) y comprobación en `Engine._check_entry`, tras el filtro macro. Solo afecta a entradas.
+  3. `config.yaml`: `asset_trend_ema: 20` en `grid_lateral`.
+  4. `livesim.py` aplica el filtro y cuenta las entradas que rechaza.
+* **Reservas:** la EMA20 es la mejor de cuatro variantes probadas (parte de la ventaja es selección); el grid sigue por debajo de 1 en ganancias/pérdidas, pierde menos pero no gana. El backtester del proyecto no aplica este filtro.
+* **Verificación:** 263 tests pasando (8 nuevos en `tests/test_asset_trend.py`); el simulador con el config final reproduce el +170,9%.
 
 ---
 

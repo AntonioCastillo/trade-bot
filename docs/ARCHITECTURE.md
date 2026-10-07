@@ -85,6 +85,8 @@ $$\text{RS}_{\text{activo}} = \text{Retorno}_{\text{activo}}(14\text{d}) - \text
 
 ## 4. Gestión de Riesgo y Protección de Beneficios
 
+0. **Tendencia de la propia moneda (desde 2026-10-07, solo `grid_lateral`):**
+   - Con `asset_trend_ema: 20`, la cabeza solo compra si el precio está en o por encima de su EMA20 diaria.
 1. **Guarda Macro Bitcoin:**
    - Si $\text{BTC/USDT} < \text{EMA 50 Diaria}$, todas las compras direccionales se bloquean preventivamente y la cuenta se refugia en **100% USDT líquido**.
 2. **Toma Parcial de Beneficios (50% @ +5.0%):**

@@ -80,6 +80,7 @@ universe:
     strategy: grid
     timeframe: 4h
     macro_btc_filter: true
+    asset_trend_ema: 20                # solo compra si la moneda está sobre su EMA20 diaria (AUDIT 6.5)
     # Reglas de pausa (2026-10-04): solo bloquean entradas nuevas; lo abierto se sigue gestionando.
     strike_pause:                      # 3 stops con pérdida en 7 días -> 30 días sin abrir
       strikes: 3

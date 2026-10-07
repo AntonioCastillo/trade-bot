@@ -133,6 +133,9 @@ class Instrument:
     rs_lookback_days: int = 14
     rs_hysteresis_pct: float = 5.0
     macro_btc_filter: bool = False
+    # Filtro de tendencia de la PROPIA moneda: solo entra si su precio está en o por
+    # encima de su EMA diaria de N velas (0 = desactivado).
+    asset_trend_ema: int = 0
     use_atr_trailing: bool = False
     atr_trailing_mult: float = 3.0
     # Position sizing adaptativo por volatilidad (ATR)
@@ -205,6 +208,8 @@ class Config:
                 )
             if ins.stop_loss_pct <= 0 or ins.take_profit_pct <= 0:
                 raise ValueError(f"SL/TP de {ins.symbol} deben ser > 0")
+            if ins.asset_trend_ema < 0:
+                raise ValueError(f"asset_trend_ema de {ins.category} debe ser >= 0")
             if ins.strike_limit < 0 or ins.strike_window_days <= 0 or ins.strike_pause_days <= 0:
                 raise ValueError(f"strike_pause de {ins.category} no es válido")
         heads = {ins.category for ins in self.instruments}
@@ -284,6 +289,7 @@ def _build_instruments(
                     rs_lookback_days=int(rs_cfg.get("lookback_days", 14)),
                     rs_hysteresis_pct=float(rs_cfg.get("hysteresis_pct", 5.0)),
                     macro_btc_filter=bool(cat.get("macro_btc_filter", False)),
+                    asset_trend_ema=int(cat.get("asset_trend_ema", 0)),
                     strike_limit=int(strike_cfg.get("strikes", 0)),
                     strike_window_days=float(strike_cfg.get("window_days", 7)),
                     strike_pause_days=float(strike_cfg.get("pause_days", 30)),
