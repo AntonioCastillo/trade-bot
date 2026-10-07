@@ -205,7 +205,10 @@ class Engine:
             except Exception as e:
                 logger.warning("[HEDGE] No se pudo abrir la cobertura: %s", e)
 
-    def _check_exits(self, symbol: str, current_price: float, candles: pd.DataFrame | None = None) -> None:
+    def _check_exits(self, symbol: str, current_price: float, candles: pd.DataFrame | None = None,
+                     count_bar: bool = True) -> None:
+        """`count_bar=False` en el sondeo rápido entre ciclos: evalúa las salidas sin
+        contar una vela más de permanencia."""
         current_atr = 0.0
         if candles is not None and len(candles) >= 15:
             try:
@@ -219,7 +222,8 @@ class Engine:
             if pos.symbol != symbol:
                 still_open.append(pos)
                 continue
-            pos.bars_held += 1
+            if count_bar:
+                pos.bars_held += 1
             # 1) Salida por TIEMPO (si está activada): cerrar tras N velas.
             if self.max_hold_bars and pos.bars_held >= self.max_hold_bars:
                 close_side = Side.SELL if pos.side is Side.BUY else Side.BUY
@@ -639,7 +643,14 @@ class Engine:
             side=pos.side, amount=pos.amount, entry_price=pos.entry_price,
             exit_price=fill.filled_price, fee_total=fee_total, pnl_abs=pnl_abs,
             pnl_pct=pnl_pct, exit_reason=close_order.reason, opened_at=pos.opened_at,
+            # En los cierres por stop se guarda el nivel, para medir el deslizamiento real.
+            stop_price=pos.stop_loss if close_order.reason in STRIKE_EXIT_REASONS else None,
         )
+        if trade.stop_slippage_pct is not None:
+            logger.info(
+                "[%s] stop de %s: nivel %.6f, venta %.6f (%+.2f%% respecto al nivel)",
+                pos.category, pos.symbol, trade.stop_price, trade.exit_price, trade.stop_slippage_pct,
+            )
         self.storage.record_closed_trade(trade)
         self.storage.delete_open_position(pos)   # ya no está abierta
         self._register_strike(trade)

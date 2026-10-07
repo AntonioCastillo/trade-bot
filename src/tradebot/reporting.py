@@ -47,6 +47,12 @@ def render_report(
     lines.append(f"Profit factor:        {pf}   (>1 = rentable)")
     lines.append(f"Max drawdown:         {m.max_drawdown_pct:.2f}%")
     lines.append(f"Sharpe (por op.):     {m.sharpe:.2f}")
+    slip = storage.stop_slippage()
+    if slip["stops"]:
+        lines.append(
+            f"Deslizam. en stops:   {slip['avg_pct']:+.2f}% de media, peor {slip['worst_pct']:+.2f}% "
+            f"({slip['stops']} stops medidos)"
+        )
 
     # --- Desglose por categoría y por símbolo -------------------------------------
     for dim, title in (("category", "POR CATEGORÍA"), ("symbol", "POR SÍMBOLO")):

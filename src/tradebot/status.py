@@ -112,6 +112,13 @@ def build_status(engine, config) -> dict[str, Any]:
     except Exception:
         paused_heads = {}
 
+    try:
+        slip = engine.storage.stop_slippage()
+        stop_slippage = {"stops": int(slip["stops"]), "avg_pct": round(float(slip["avg_pct"]), 3),
+                         "worst_pct": round(float(slip["worst_pct"]), 3)}
+    except Exception:
+        stop_slippage = {}
+
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mode": config.mode,
@@ -127,6 +134,7 @@ def build_status(engine, config) -> dict[str, Any]:
         "heads": active_heads(config),
         "by_head": by_head,
         "paused_heads": paused_heads,
+        "stop_slippage": stop_slippage,
         "sniper_enabled": config.sniper.enabled,
         "carry_enabled": config.carry.enabled,
     }

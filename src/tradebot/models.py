@@ -240,6 +240,16 @@ class ClosedTrade:
     exit_reason: str
     opened_at: datetime
     closed_at: datetime = field(default_factory=_utcnow)
+    stop_price: float | None = None   # nivel del stop que disparó la salida (solo cierres por stop)
+
+    @property
+    def stop_slippage_pct(self) -> float | None:
+        """Cuánto peor (negativo) o mejor que el nivel del stop se vendió, en %."""
+        if not self.stop_price or not self.exit_price:
+            return None
+        if self.side is Side.BUY:
+            return (self.exit_price / self.stop_price - 1) * 100
+        return (self.stop_price / self.exit_price - 1) * 100
 
     @property
     def duration_seconds(self) -> float:
@@ -266,6 +276,7 @@ class ClosedTrade:
             "closed_at": self.closed_at.isoformat(),
             "duration_seconds": self.duration_seconds,
             "is_win": self.is_win,
+            "stop_price": self.stop_price,
         }
 
     @classmethod
@@ -286,6 +297,7 @@ class ClosedTrade:
             exit_reason=d.get("exit_reason", ""),
             opened_at=_parse_dt(d.get("opened_at")),
             closed_at=_parse_dt(d.get("closed_at")),
+            stop_price=float(d["stop_price"]) if d.get("stop_price") else None,
         )
 
 

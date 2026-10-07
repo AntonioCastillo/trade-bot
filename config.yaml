@@ -130,6 +130,7 @@ risk:
 
 engine:
   poll_interval_seconds: 60     # ciclo cada 60s
+  exit_poll_seconds: 10         # entre ciclos, comprobar las salidas de las posiciones abiertas cada 10s
   fee_pct: 0.0010              # comisión spot estándar (0.1%)
   slippage_pct: 0.0005          # deslizamiento estimado
   report_interval_seconds: 900  # informe cada 15 min

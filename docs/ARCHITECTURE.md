@@ -97,7 +97,10 @@ $$\text{RS}_{\text{activo}} = \text{Retorno}_{\text{activo}}(14\text{d}) - \text
    - `strike_pause`: tras N stops con pérdida en una ventana de días, la cabeza deja de abrir posiciones durante un periodo. `paused_while_open`: la cabeza no abre mientras otra indicada tenga posiciones.
    - Solo bloquean entradas nuevas; el estado se guarda en la tabla `state` y sobrevive a reinicios.
    - **Tope de exposición (80%):** desde 2026-10-04 se mide sobre el equity total (`risk.exposure_on_equity: true`), no sobre el USDT libre; el tamaño de cada posición sigue saliendo del libre. Activas en `grid_lateral` (3 stops en 7 días → 30 días; pausa mientras `tendencia_alcista` tenga posiciones).
-6. **Cortafuegos de Pérdida Diaria:**
+6. **Ejecución de los stops (desde 2026-10-07):**
+   - Los stops no son órdenes en el exchange: el bot comprueba el precio y vende a mercado. Entre ciclos, las posiciones abiertas se comprueban cada `engine.exit_poll_seconds` (10 s) con una sola consulta de precios.
+   - Cada cierre por stop guarda su nivel (`closed_trades.stop_price`) para medir el deslizamiento real; el resumen se publica en el gist (`stop_slippage`).
+7. **Cortafuegos de Pérdida Diaria:**
    - Si el drawdown intradía supera el límite configurado (`max_daily_loss_pct`), el bot pausa la apertura de nuevas posiciones hasta las 00:00 UTC.
 
 ---

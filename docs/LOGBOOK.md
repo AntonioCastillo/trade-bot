@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-07 | Medición del Deslizamiento de Stops y Sondeo Rápido de Posiciones Abiertas](#2026-10-07--medición-del-deslizamiento-de-stops-y-sondeo-rápido-de-posiciones-abiertas)
 * [2026-10-04 | Tope de Exposición sobre el Equity y `volumen_explosivo` Ampliada a 7 Monedas](#2026-10-04--tope-de-exposición-sobre-el-equity-y-volumen_explosivo-ampliada-a-7-monedas)
 * [2026-10-04 | Validación desde 2022: `capitulacion` Restaurada y `reversion_rango` Desactivada](#2026-10-04--validación-desde-2022-capitulacion-restaurada-y-reversion_rango-desactivada)
 * [2026-10-04 | Reglas de Pausa por Cabeza: Strikes y Pausa Mientras Otra Cabeza Tiene Posiciones](#2026-10-04--reglas-de-pausa-por-cabeza-strikes-y-pausa-mientras-otra-cabeza-tiene-posiciones)
@@ -13,6 +14,23 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-07 | Medición del Deslizamiento de Stops y Sondeo Rápido de Posiciones Abiertas
+
+* **Archivos Afectados:** [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/exchange.py`](../src/tradebot/exchange.py), [`src/tradebot/storage.py`](../src/tradebot/storage.py), [`src/tradebot/models.py`](../src/tradebot/models.py), [`src/tradebot/status.py`](../src/tradebot/status.py), [`src/tradebot/reporting.py`](../src/tradebot/reporting.py), [`src/tradebot/config.py`](../src/tradebot/config.py), [`config.yaml`](../config.yaml), [`scripts/livesim.py`](../scripts/livesim.py), [`tests/test_stop_tracking.py`](../tests/test_stop_tracking.py)
+* **Motivo / Justificación Empírica:**
+  * El 7 de octubre saltaron los primeros stops del diseño nuevo. En la caída de las 02:00 UTC el bot vendió ADA un 2,1% por debajo de su stop (−20,54 USDT en vez de −12,85) y DOT en torno a un 2,8%: el bot comprueba el precio una vez por ciclo (60 s más el recorrido de los 18 símbolos) y vende a mercado.
+  * Estudio posterior ([`AUDIT_2026-10.md`](AUDIT_2026-10.md), sección 6.4): el 70% de las operaciones simuladas sale por stop, y el resultado del conjunto desde 2022 pasa de +162% con un 0,2% de deslizamiento (lo que suponía el simulador) a +94% con un 1% y +34% con un 2%. Los cinco stops reales conocidos promedian ≈ 1,3%.
+  * Se estudiaron las órdenes de stop en el exchange (viables con ccxt y KuCoin, que no bloquea saldo hasta el disparo), pero se dejaron como fase 3 por su riesgo: órdenes huérfanas que podrían vender una posición posterior, más stops por mechas (8% de los toques son mechas que se recuperan) y necesidad de una prueba con dinero real.
+* **Cambios Implementados:**
+  1. **Fase 1, medir.** `ClosedTrade.stop_price` y columna `closed_trades.stop_price` (migración automática): en los cierres por stop se guarda el nivel que disparó la salida. `Storage.stop_slippage()` devuelve número de stops medidos, deslizamiento medio y peor. Se muestra en el informe, en el gist (`stop_slippage`) y en el log de cada stop.
+  2. **Fase 2, sondeo rápido.** `engine.exit_poll_seconds` (0 = desactivado; 10 en `config.yaml`). `daemon._wait_cycle` sustituye a la espera fija entre ciclos: con posiciones abiertas llama cada 10 s a `_poll_open_exits`, que pide los precios en una sola consulta (`Exchange.fetch_last_prices`) y evalúa las salidas con `Engine._check_exits(..., count_bar=False)`. No abre posiciones. Si la consulta falla, espera al ciclo normal.
+  3. `livesim.py` añade `entry` y `stop` a las operaciones simuladas (usado en el estudio).
+* **Impacto Esperado:** el retraso entre que el precio cruza un stop y la venta baja de más de un minuto a unos 10 s. En el caso de ADA habría vendido cerca de 0,257 en vez de 0,253. También detecta antes los objetivos y la venta parcial.
+* **Reservas:** el sondeo rápido reduce pero no elimina el deslizamiento en caídas de segundos; sigue ignorando mechas más cortas que el intervalo. El efecto real se sabrá con los próximos stops, ahora medidos.
+* **Verificación:** 255 tests pasando (11 nuevos en `tests/test_stop_tracking.py`); consulta de precios probada contra KuCoin (0,4–0,5 s).
 
 ---
 

@@ -30,6 +30,9 @@ class RiskConfig:
 @dataclass
 class EngineConfig:
     poll_interval_seconds: int = 60
+    # Entre ciclo y ciclo, comprobar las salidas de las posiciones ABIERTAS cada N
+    # segundos con una sola consulta de precios (0 = desactivado: solo una vez por ciclo).
+    exit_poll_seconds: int = 0
     fee_pct: float = 0.001
     slippage_pct: float = 0.0005
     report_interval_seconds: int = 900        # cada cuánto vuelca el informe a disco

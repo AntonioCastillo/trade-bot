@@ -250,6 +250,51 @@ def _maybe_first_run_api_check(engine: Engine, config: Config) -> None:
         )
 
 
+def _poll_open_exits(engine: Engine, candles_cache: dict) -> None:
+    """Sondeo rápido: UNA consulta de precios para las posiciones abiertas y evaluación
+    de sus salidas (stop / parcial / objetivo / trailing). No abre posiciones."""
+    symbols = list(dict.fromkeys(p.symbol for p in engine.positions))
+    if not symbols:
+        return
+    prices = engine.exchange.fetch_last_prices(symbols)
+    for symbol in symbols:
+        price = prices.get(symbol)
+        if not price or price <= 0:
+            continue
+        engine.last_prices[symbol] = price
+        engine._check_exits(symbol, price, candles=candles_cache.get(symbol), count_bar=False)
+
+
+def _wait_cycle(engine: Engine, interval: float, exit_poll_seconds: float, candles_cache: dict,
+                sleep=time.sleep, clock=time.monotonic) -> None:
+    """Espera `interval` hasta el siguiente ciclo. Si el sondeo rápido está activo y hay
+    posiciones abiertas, comprueba sus salidas cada `exit_poll_seconds` en vez de dormir
+    de un tirón. Un fallo del sondeo no rompe el bucle: se espera el resto y el ciclo
+    normal vuelve a comprobarlas."""
+    if exit_poll_seconds <= 0:
+        sleep(interval)
+        return
+    deadline = clock() + interval
+    while True:
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return
+        if not engine.positions:
+            sleep(remaining)
+            return
+        sleep(min(exit_poll_seconds, remaining))
+        if clock() >= deadline:
+            return
+        try:
+            _poll_open_exits(engine, candles_cache)
+        except Exception as exc:
+            logger.warning("Sondeo rápido de salidas falló (%s); espero al ciclo normal", exc)
+            remaining = deadline - clock()
+            if remaining > 0:
+                sleep(remaining)
+            return
+
+
 def _live_preflight(engine: Engine, config: Config, symbols: list[str]) -> None:
     """En modo live, avisa qué símbolos no llegan al mínimo de orden de KuCoin
     con el tamaño de posición actual (balance * position_size_pct)."""
@@ -343,6 +388,10 @@ def run_forever(
     )
     prev_halted = False
     last_closed: dict[str, object] = {}   # última vela CERRADA procesada por símbolo
+    candles_cache: dict[str, object] = {}  # últimas velas por símbolo (ATR del sondeo rápido)
+    exit_poll = config.engine.exit_poll_seconds
+    if exit_poll > 0:
+        logger.info("Sondeo rápido de salidas activo: posiciones abiertas cada %ds", exit_poll)
 
     def _notify_fail(prefix: str, exc: Exception) -> None:
         """Avisa por Telegram de un fallo, con anti-spam por tiempo."""
@@ -440,6 +489,7 @@ def run_forever(
                         )
                         if len(candles) < 2:
                             continue
+                        candles_cache[symbol] = candles
 
                         # Actualizar siempre el precio en vivo y evaluar salidas continuas (SL/TP) en cada sondeo de 60s
                         live_price = float(candles["close"].iloc[-1])
@@ -494,7 +544,7 @@ def run_forever(
                 logger.exception("Error inesperado en el bucle principal; continúo")
                 _notify_fail("en el bucle principal", exc)
 
-            time.sleep(interval)
+            _wait_cycle(engine, interval, exit_poll, candles_cache)
 
     except KeyboardInterrupt:
         logger.info("Interrumpido por el usuario. Guardando informe final y cerrando.")

@@ -228,6 +228,23 @@ class Exchange:
             raise ValueError(f"{symbol}: sin precio disponible todavía (recién listada)")
         return float(price)
 
+    def fetch_last_prices(self, symbols: list[str]) -> dict[str, float]:
+        """Últimos precios de varios símbolos en UNA consulta (sondeo rápido de salidas).
+        Sin reintentos: si falla, el llamador se salta ese sondeo. Los símbolos sin
+        precio se omiten del resultado."""
+        if not symbols:
+            return {}
+        wanted = {self._normalize_symbol(s): s for s in symbols}
+        tickers = self._client.fetch_tickers(list(wanted))
+        prices: dict[str, float] = {}
+        for normalized, original in wanted.items():
+            ticker = tickers.get(normalized) or {}
+            price = (ticker.get("last") or ticker.get("close")
+                     or ticker.get("bid") or ticker.get("ask"))
+            if price:
+                prices[original] = float(price)
+        return prices
+
     @with_network_retry
     def fetch_balance(self, currency: str) -> float:
         """Saldo libre de una moneda. Requiere credenciales (modo live)."""

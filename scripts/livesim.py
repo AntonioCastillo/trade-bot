@@ -280,7 +280,8 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
     def close(p: dict, fill: float, t: pd.Timestamp, reason: str) -> None:
         sell(p, fill, p["amount"])
         trades.append(dict(opened=p["opened"], closed=t, head=p["head"], symbol=p["symbol"], reason=reason,
-                           ret=p["realized"] / p["cost"] - 1, pnl=p["realized"] - p["cost"]))
+                           ret=p["realized"] / p["cost"] - 1, pnl=p["realized"] - p["cost"],
+                           entry=p["entry"], stop=p["stop"]))
         register_strike(trades[-1])
         if on_close is not None:
             on_close(trades[-1])
@@ -374,7 +375,7 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
 
     for p in positions:                                            # mark-to-market final
         close(p, last_px[p["symbol"]], close_time[-1], "abierta")
-    columns = ["opened", "closed", "head", "symbol", "reason", "ret", "pnl"]
+    columns = ["opened", "closed", "head", "symbol", "reason", "ret", "pnl", "entry", "stop"]
     equity = pd.Series(eq_v, index=eq_t)
     equity.attrs["rejected"] = rejected
     equity.attrs["pauses"] = pauses

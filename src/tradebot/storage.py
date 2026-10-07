@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS closed_trades (
     exit_reason   TEXT NOT NULL,
     opened_at     TEXT NOT NULL,
     closed_at     TEXT NOT NULL,
-    duration_s    REAL NOT NULL
+    duration_s    REAL NOT NULL,
+    stop_price    REAL
 );
 
 CREATE TABLE IF NOT EXISTS open_positions (
@@ -105,6 +106,10 @@ class Storage:
             self._conn.execute("ALTER TABLE funding_payments ADD COLUMN payment_id TEXT")
         except Exception:
             pass
+        try:   # BD anteriores a la medición del deslizamiento de stops
+            self._conn.execute("ALTER TABLE closed_trades ADD COLUMN stop_price REAL")
+        except Exception:
+            pass
         try:
             self._conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_funding_payments_payment_id ON funding_payments(payment_id)")
         except Exception:
@@ -128,14 +133,14 @@ class Storage:
         self._conn.execute(
             "INSERT INTO closed_trades (symbol, category, strategy, side, amount,"
             " entry_price, exit_price, fee_total, pnl_abs, pnl_pct, exit_reason,"
-            " opened_at, closed_at, duration_s)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " opened_at, closed_at, duration_s, stop_price)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 trade.symbol, trade.category, trade.strategy_name, trade.side.value,
                 trade.amount, trade.entry_price, trade.exit_price, trade.fee_total,
                 trade.pnl_abs, trade.pnl_pct, trade.exit_reason,
                 trade.opened_at.isoformat(), trade.closed_at.isoformat(),
-                trade.duration_seconds,
+                trade.duration_seconds, trade.stop_price,
             ),
         )
         self._conn.commit()
@@ -245,6 +250,22 @@ class Storage:
             (category, *reasons, limit),
         ).fetchall()
         return [datetime.fromisoformat(r["closed_at"]) for r in rows]
+
+    def stop_slippage(self) -> dict:
+        """Deslizamiento real de los stops: cuánto peor que su nivel se vendió, en %.
+        Solo cuenta los cierres que registraron el nivel (`stop_price`)."""
+        rows = self._conn.execute(
+            "SELECT side, exit_price, stop_price FROM closed_trades"
+            " WHERE stop_price IS NOT NULL AND stop_price > 0 AND exit_price > 0"
+        ).fetchall()
+        slips = [
+            (r["exit_price"] / r["stop_price"] - 1) * 100 if r["side"] == Side.BUY.value
+            else (r["stop_price"] / r["exit_price"] - 1) * 100
+            for r in rows
+        ]
+        if not slips:
+            return {"stops": 0, "avg_pct": 0.0, "worst_pct": 0.0}
+        return {"stops": len(slips), "avg_pct": sum(slips) / len(slips), "worst_pct": min(slips)}
 
     def summary(self) -> dict:
         """Estadísticas globales sobre las operaciones cerradas."""
