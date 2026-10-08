@@ -5,6 +5,7 @@ cabeza. El resumen del sniper se fusiona aparte (lo escribe su propio hilo)."""
 from __future__ import annotations
 
 import json
+import os
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -143,14 +144,21 @@ def build_status(engine, config) -> dict[str, Any]:
     }
 
 
+def _write_atomic(path: Path, text: str) -> None:
+    """Escribe a un temporal y lo renombra: el publicador (otro hilo) nunca lee un
+    fichero a medio escribir."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def write_status(engine, config, path: str | None = None) -> None:
     """Vuelca el status a disco (JSON) en el fichero de ESTA instancia
-    (data/status_<slot>.json). Lo llama el daemon en cada informe."""
+    (data/status_<slot>.json). Lo llama el daemon en cada ciclo."""
     path = path or status_path(status_slot(config))
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(build_status(engine, config), indent=2, ensure_ascii=False),
-                 encoding="utf-8")
+    _write_atomic(p, json.dumps(build_status(engine, config), indent=2, ensure_ascii=False))
 
     # Si carry está desactivado, limpiar carry_status para que el publicador no arrastre posiciones residuales
     if not config.carry.enabled:
@@ -163,7 +171,7 @@ def write_status(engine, config, path: str | None = None) -> None:
                 "total_funding_collected": total_f,
                 "positions": [],
             }
-            cp.write_text(json.dumps(carry_data, indent=2, ensure_ascii=False), encoding="utf-8")
+            _write_atomic(cp, json.dumps(carry_data, indent=2, ensure_ascii=False))
         except Exception:
             pass
 

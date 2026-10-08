@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-08 | El Gist Publicaba el Status con 15 Minutos de Retraso](#2026-10-08--el-gist-publicaba-el-status-con-15-minutos-de-retraso)
 * [2026-10-08 | Despliegue Automático desde GitHub (el VPS Consulta la Rama `production`) y Parada Ordenada](#2026-10-08--despliegue-automático-desde-github-el-vps-consulta-la-rama-production-y-parada-ordenada)
 * [2026-10-08 | Equity Correcto tras un Reinicio y Corrección de Ejecuciones sin Confirmar](#2026-10-08--equity-correcto-tras-un-reinicio-y-corrección-de-ejecuciones-sin-confirmar)
 * [2026-10-07 | Filtro de Tendencia de la Propia Moneda en el Grid (EMA20 Diaria)](#2026-10-07--filtro-de-tendencia-de-la-propia-moneda-en-el-grid-ema20-diaria)
@@ -17,6 +18,22 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-08 | El Gist Publicaba el Status con 15 Minutos de Retraso
+
+* **Archivos Afectados:** [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`src/tradebot/status.py`](../src/tradebot/status.py), [`tests/test_status_freshness.py`](../tests/test_status_freshness.py)
+* **Motivo / Petición del Usuario:**
+  * El gist publicado a las 21:10 UTC del 8-oct llevaba el status de las 20:55; el de las 20:55, el de las 20:40. Siempre un intervalo de publicación por detrás.
+* **Causa Técnica:**
+  * El hilo publicador llamaba a `write_status` antes de subir, pero esa llamada fallaba **siempre y en silencio** (`except Exception: pass`): `build_status` consulta SQLite y la conexión pertenece al hilo principal. Así que subía el fichero que el hilo principal escribía solo en cada informe (cada 15 min), y como los dos relojes van acompasados, lo leía justo antes de que se renovara.
+* **Cambios Implementados:**
+  1. El hilo principal reescribe el status **en cada ciclo** (`daemon._refresh_status`, tras corregir las ejecuciones pendientes), no solo en el informe.
+  2. El hilo publicador solo lee el fichero y lo sube; ya no toca el motor.
+  3. `write_status` escribe a un temporal y lo renombra (`_write_atomic`), para que el publicador nunca lea un fichero a medias ahora que se reescribe cada minuto.
+* **Impacto Esperado:** el gist refleja el estado de hace como mucho un ciclo (unos 60 s) en el momento de publicarse; se sigue publicando cada 15 min.
+* **Verificación:** 284 tests pasando (4 nuevos; 3 de ellos fallan con el código anterior).
 
 ---
 
