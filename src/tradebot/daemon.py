@@ -157,6 +157,17 @@ def _maybe_start_carry(config: Config, notifier: Notifier, engine: Engine | None
     return thread
 
 
+def _refresh_status(engine: Engine, config: Config) -> bool:
+    """Reescribe data/status_<slot>.json con el estado actual. Se llama en cada ciclo
+    desde el hilo principal, para que el publicador suba siempre un status reciente."""
+    try:
+        write_status(engine, config)
+        return True
+    except Exception:
+        logger.warning("No pude escribir el status", exc_info=True)
+        return False
+
+
 def _maybe_start_publisher(config: Config, engine: Engine) -> threading.Thread | None:
     """Publica el status a un gist secreto cada PUBLISH_INTERVAL_SECONDS, en un hilo
     del PROPIO bot (no hace falta cron ni timer). Resiliente: si GitHub falla, el bot
@@ -176,16 +187,14 @@ def _maybe_start_publisher(config: Config, engine: Engine) -> threading.Thread |
 
     def _loop() -> None:
         from .publisher import publish_to_gist
-        from .status import load_unified, write_status
+        from .status import load_unified
         gist_id = _read_gist_id()
         notified = False
         while True:
             try:
-                # Asegurar que se escriba el status de esta instancia antes de publicar
-                try:
-                    write_status(engine, config)
-                except Exception:
-                    pass
+                # Solo sube el fichero: el status lo escribe el hilo principal en cada
+                # ciclo (`_refresh_status`). Construirlo aquí falla siempre, porque la
+                # conexión SQLite pertenece al hilo principal.
                 status = load_unified()
                 if status.get("instances"):
                     res = publish_to_gist(status, token, gist_id)
@@ -570,10 +579,6 @@ def run_forever(
                         engine.storage, config.risk.quote_currency, report_path,
                         config.risk.starting_balance,
                     )
-                    try:
-                        write_status(engine, config)   # data/status.json (para publicar)
-                    except Exception:
-                        logger.warning("No pude escribir data/status.json")
                     s = engine.storage.summary()
                     logger.info(
                         "Informe actualizado (%s) | ops=%d | P&L=%.2f %s | equity=%.2f | %s",
@@ -592,6 +597,9 @@ def run_forever(
                 engine.reconcile_fills()
             except Exception:
                 logger.exception("No pude confirmar las ejecuciones pendientes; lo reintento en el próximo ciclo")
+
+            # Status al día en cada ciclo (lo que sube el publicador al gist).
+            _refresh_status(engine, config)
 
             _wait_cycle(engine, interval, exit_poll, candles_cache, sleep=stopper.sleep)
 
