@@ -134,6 +134,8 @@ sudo systemctl start tradebot
 
 # Reiniciar servicio (tras hacer git pull)
 sudo systemctl restart tradebot
+# Con el despliegue automático instalado (deploy/DEPLOY.md §9) no hace falta: el VPS
+# despliega solo lo que entra en main y pasa los tests.
 
 # Ver logs en tiempo real
 sudo journalctl -u tradebot -f

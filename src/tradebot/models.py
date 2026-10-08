@@ -117,6 +117,10 @@ class Fill:
     filled_amount: float
     fee: float
     timestamp: datetime = field(default_factory=_utcnow)
+    # En live: si el exchange aún no había confirmado la ejecución, precio, cantidad y
+    # comisión son estimados (confirmed=False) y se corrigen después con `order_id`.
+    order_id: str | None = None
+    confirmed: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {

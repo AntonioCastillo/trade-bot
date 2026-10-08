@@ -24,6 +24,11 @@ class ExecutionEngine(ABC):
         """Saldo disponible en la moneda de cotización (p.ej. USDT)."""
         raise NotImplementedError
 
+    def confirm_fill(self, fill: Fill) -> Fill | None:
+        """Vuelve a consultar una ejecución registrada con datos estimados
+        (`fill.confirmed` False). Devuelve la ejecución real, o None si aún no consta."""
+        return None
+
     def cancel_order(self, order_id: str, symbol: str) -> bool:
         """Cancela una orden activa si el motor lo soporta."""
         return False

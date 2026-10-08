@@ -60,6 +60,7 @@ class Engine:
         self.positions: list[Position] = []
         self.last_prices: dict[str, float] = {}
         self.closed_trades: list[ClosedTrade] = []
+        self._unconfirmed: list[dict] = []   # ejecuciones con datos estimados, por confirmar
 
     # --- Ciclo de decisión de un símbolo -------------------------------------------
 
@@ -411,6 +412,7 @@ class Engine:
         )
         self.positions.append(position)
         self.storage.save_open_position(position)   # persistir para reinicios
+        self._track_unconfirmed("entry", fill, position=position)
         self._save_cash()
         quote = self.config.risk.quote_currency
         equity = self.equity()
@@ -581,7 +583,8 @@ class Engine:
             exit_price=fill.filled_price, fee_total=fee_total, pnl_abs=pnl_abs,
             pnl_pct=pnl_pct, exit_reason=close_order.reason, opened_at=pos.opened_at,
         )
-        self.storage.record_closed_trade(trade)
+        trade_id = self.storage.record_closed_trade(trade)
+        self._track_unconfirmed("exit", fill, trade=trade, trade_id=trade_id)
         self.closed_trades.append(trade)
 
         # Ajustar la posición abierta existente (reducir cantidad y ajustar a Breakeven)
@@ -660,7 +663,8 @@ class Engine:
                 "[%s] stop de %s: nivel %.6f, venta %.6f (%+.2f%% respecto al nivel)",
                 pos.category, pos.symbol, trade.stop_price, trade.exit_price, trade.stop_slippage_pct,
             )
-        self.storage.record_closed_trade(trade)
+        trade_id = self.storage.record_closed_trade(trade)
+        self._track_unconfirmed("exit", fill, trade=trade, trade_id=trade_id)
         self.storage.delete_open_position(pos)   # ya no está abierta
         self._register_strike(trade)
         self._save_cash()
@@ -687,6 +691,95 @@ class Engine:
             quote=quote,
         )
         return True
+
+    # --- Ejecuciones sin confirmar ----------------------------------------------------
+
+    MAX_FILL_CONFIRM_ATTEMPTS = 30   # ciclos que se insiste antes de dejar los datos estimados
+
+    def _track_unconfirmed(self, kind: str, fill, position: Position | None = None,
+                           trade: ClosedTrade | None = None, trade_id: int = 0) -> None:
+        """Apunta una ejecución que el exchange no confirmó a tiempo (precio, cantidad y
+        comisión estimados) para corregirla en `reconcile_fills`."""
+        if getattr(fill, "confirmed", True) is not False or not getattr(fill, "order_id", None):
+            return
+        self._unconfirmed.append({"kind": kind, "fill": fill, "position": position,
+                                  "trade": trade, "trade_id": trade_id, "attempts": 0})
+
+    def reconcile_fills(self) -> int:
+        """Vuelve a consultar las ejecuciones apuntadas como estimadas y corrige la
+        posición (compras) o la operación cerrada (ventas) con los datos reales.
+        Devuelve cuántas corrigió. Se llama una vez por ciclo: nunca retrasa una venta."""
+        if not self._unconfirmed:
+            return 0
+        fixed, pending = 0, []
+        for item in self._unconfirmed:
+            fill = item["fill"]
+            try:
+                real = self.execution.confirm_fill(fill)
+            except Exception as exc:
+                logger.debug("No pude confirmar la orden %s (%s)", fill.order_id, exc)
+                real = None
+            if real is None:
+                item["attempts"] += 1
+                if item["attempts"] >= self.MAX_FILL_CONFIRM_ATTEMPTS:
+                    logger.warning(
+                        "[%s] La orden %s sigue sin confirmar tras %d intentos: su registro se queda "
+                        "con los datos estimados", fill.order.symbol, fill.order_id, item["attempts"],
+                    )
+                else:
+                    pending.append(item)
+                continue
+            if item["kind"] == "entry":
+                self._apply_confirmed_entry(item["position"], fill, real)
+            else:
+                self._apply_confirmed_exit(item["trade"], item["trade_id"], fill, real)
+            fixed += 1
+        self._unconfirmed = pending
+        return fixed
+
+    def _apply_confirmed_entry(self, pos: Position, estimated, real) -> None:
+        if not any(p is pos for p in self.positions):
+            logger.warning(
+                "[%s] La compra (orden %s) se confirmó con la posición ya cerrada: su operación "
+                "queda con la entrada estimada", pos.symbol, real.order_id,
+            )
+            return
+        before = (pos.entry_price, pos.amount, pos.entry_fee)
+        # Por diferencias: si ya hubo una toma parcial, se conserva lo vendido.
+        pos.amount = max(pos.amount + real.filled_amount - estimated.filled_amount, 0.0)
+        pos.entry_fee = max(pos.entry_fee + real.fee - estimated.fee, 0.0)
+        pos.entry_price = real.filled_price
+        # Stop y objetivo se dejan donde estaban: se fijaron con el precio de la señal.
+        self.storage.update_open_position_entry(pos)
+        logger.info(
+            "[%s] Compra confirmada (orden %s): precio %.6f -> %.6f, cantidad %.8f -> %.8f, comisión %.4f -> %.4f",
+            pos.symbol, real.order_id, before[0], pos.entry_price, before[1], pos.amount, before[2], pos.entry_fee,
+        )
+
+    def _apply_confirmed_exit(self, trade: ClosedTrade, trade_id: int, estimated, real) -> None:
+        before = (trade.exit_price, trade.pnl_abs)
+        direction = 1 if trade.side is Side.BUY else -1
+        entry_fee = trade.fee_total - estimated.fee
+        trade.exit_price = real.filled_price
+        trade.fee_total = entry_fee + real.fee
+        trade.pnl_abs = (real.filled_price - trade.entry_price) * trade.amount * direction - trade.fee_total
+        cost_basis = trade.entry_price * trade.amount
+        trade.pnl_pct = (trade.pnl_abs / cost_basis * 100) if cost_basis else 0.0
+        self.storage.update_closed_trade(trade_id, trade)
+        quote = self.config.risk.quote_currency
+        logger.info(
+            "[%s] Venta confirmada (orden %s, %s): precio %.6f -> %.6f, P&L %.2f -> %.2f %s",
+            trade.symbol, real.order_id, trade.exit_reason, before[0], trade.exit_price,
+            before[1], trade.pnl_abs, quote,
+        )
+        self._log_head(trade.category,
+                       f"CORRIGE {trade.symbol} ({trade.exit_reason}) venta real {trade.exit_price:.6f} | "
+                       f"P&L {trade.pnl_abs:+.2f} ({trade.pnl_pct:+.2f}%)")
+        self.notifier.notify(
+            f"ℹ️ <b>Corrección</b> {trade.symbol} ({trade.exit_reason})\n"
+            f"El exchange confirmó la venta: {before[0]:.6f} → {trade.exit_price:.6f}\n"
+            f"P&L: {before[1]:+.2f} → <b>{trade.pnl_abs:+.2f} {quote}</b> ({trade.pnl_pct:+.2f}%)"
+        )
 
     def _log_head(self, category: str, text: str) -> None:
         """Escribe una línea en el log específico de la cabeza (logs/heads/<cat>.log)."""
@@ -737,6 +830,8 @@ class Engine:
         if self.config.mode == "live" and self.exchange is not None and self.positions:
             self._reconcile_live()
 
+        self._seed_last_prices()
+
         if self.positions:
             logger.info(
                 "Readoptadas %d posiciones abiertas persistidas: %s",
@@ -744,6 +839,21 @@ class Engine:
                 ", ".join(f"{p.category}/{p.symbol}" for p in self.positions),
             )
         return len(self.positions)
+
+    def _seed_last_prices(self) -> None:
+        """Pide el precio de mercado de las posiciones readoptadas. Sin esto, hasta el
+        primer ciclo el equity las valora a su precio de entrada (mensaje de arranque,
+        primer status publicado y base del cortafuegos diario)."""
+        fetch = getattr(self.exchange, "fetch_last_prices", None)
+        if not self.positions or not callable(fetch):
+            return
+        try:
+            prices = fetch(list(dict.fromkeys(p.symbol for p in self.positions)))
+        except Exception as exc:
+            logger.warning("No pude leer los precios de las posiciones readoptadas (%s)", exc)
+            return
+        if isinstance(prices, dict):
+            self.last_prices.update({s: float(p) for s, p in prices.items() if p and p > 0})
 
     # Tolerancias de reconciliación (relativas al importe registrado).
     RECONCILE_GONE_RATIO = 0.05    # saldo real < 5% del registrado -> la posición ya no existe

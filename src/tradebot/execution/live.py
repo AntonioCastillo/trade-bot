@@ -95,12 +95,38 @@ class LiveExecutionEngine(ExecutionEngine):
         filled_amount = float(result.get("filled") or order.amount)
         fee_info = result.get("fee") or {}
         fee = float(fee_info.get("cost") or 0.0)
+        # Si KuCoin no reflejó la ejecución a tiempo, lo de arriba son estimaciones
+        # (precio de referencia, cantidad pedida, comisión 0): el motor las corrige después.
+        confirmed = float(result.get("filled") or 0) > 0
+        order_id = result.get("id") or (result.get("info") or {}).get("orderId")
         logger.info(
             "[LIVE] %s %.8f %s @ %.6f (fee %.4f)",
             order.side.value.upper(), filled_amount, order.symbol, filled_price, fee,
         )
+        if not confirmed:
+            logger.warning(
+                "[LIVE] %s %s: el exchange aún no confirma la ejecución (orden %s); "
+                "registro datos estimados y los corrijo en cuanto conste",
+                order.side.value.upper(), order.symbol, order_id,
+            )
         return Fill(order=order, filled_price=filled_price,
-                    filled_amount=filled_amount, fee=fee)
+                    filled_amount=filled_amount, fee=fee,
+                    order_id=str(order_id) if order_id else None, confirmed=confirmed)
+
+    def confirm_fill(self, fill: Fill) -> Fill | None:
+        if fill.confirmed or not fill.order_id:
+            return None
+        result = self.exchange.fetch_order_fill(fill.order_id, fill.order.symbol)
+        if result is None:
+            return None
+        fee_info = result.get("fee") or {}
+        return Fill(
+            order=fill.order,
+            filled_price=float(result.get("average") or result.get("price") or fill.filled_price),
+            filled_amount=float(result["filled"]),
+            fee=float(fee_info.get("cost") or 0.0),
+            timestamp=fill.timestamp, order_id=fill.order_id, confirmed=True,
+        )
 
     def _to_fill_futures(self, order: Order, result: dict, symbol: str) -> Fill:
         filled_price = float(result.get("average") or result.get("price") or order.price)

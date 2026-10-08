@@ -1,0 +1,13 @@
+# Despliegue automático (one-shot; lo dispara el .timer). Corre como root porque
+# reinicia el servicio; git y pip se ejecutan como el usuario del bot.
+# Ajustes opcionales (rama, márgenes, plazos) en /etc/tradebot-autodeploy.conf.
+[Unit]
+Description=tradebot: despliega la rama production si hay un commit nuevo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/tradebot-autodeploy.conf
+ExecStart=/usr/local/sbin/tradebot-autodeploy
+TimeoutStartSec=15min

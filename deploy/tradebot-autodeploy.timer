@@ -1,0 +1,11 @@
+# Consulta GitHub cada 5 min (y ~2 min tras arrancar el VPS).
+[Unit]
+Description=tradebot: comprueba si hay despliegue pendiente cada 5 min
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

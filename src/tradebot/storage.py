@@ -129,8 +129,9 @@ class Storage:
         )
         self._conn.commit()
 
-    def record_closed_trade(self, trade: ClosedTrade) -> None:
-        self._conn.execute(
+    def record_closed_trade(self, trade: ClosedTrade) -> int:
+        """Guarda la operación y devuelve el id de su fila."""
+        cur = self._conn.execute(
             "INSERT INTO closed_trades (symbol, category, strategy, side, amount,"
             " entry_price, exit_price, fee_total, pnl_abs, pnl_pct, exit_reason,"
             " opened_at, closed_at, duration_s, stop_price)"
@@ -142,6 +143,18 @@ class Storage:
                 trade.opened_at.isoformat(), trade.closed_at.isoformat(),
                 trade.duration_seconds, trade.stop_price,
             ),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def update_closed_trade(self, trade_id: int, trade: ClosedTrade) -> None:
+        """Corrige la salida de una operación ya guardada (venta registrada con datos
+        estimados y confirmada después por el exchange)."""
+        if not trade_id:
+            return
+        self._conn.execute(
+            "UPDATE closed_trades SET exit_price=?, fee_total=?, pnl_abs=?, pnl_pct=? WHERE id=?",
+            (trade.exit_price, trade.fee_total, trade.pnl_abs, trade.pnl_pct, trade_id),
         )
         self._conn.commit()
 
@@ -177,6 +190,17 @@ class Storage:
             "UPDATE open_positions SET stop_loss=?, peak_price=?, bars_held=?, amount=?,"
             " partial_tp_done=? WHERE id=?",
             (pos.stop_loss, pos.peak_price, pos.bars_held, pos.amount, int(pos.partial_tp_done), pos.db_id),
+        )
+        self._conn.commit()
+
+    def update_open_position_entry(self, pos: Position) -> None:
+        """Corrige la entrada de una posición abierta (compra registrada con datos
+        estimados y confirmada después por el exchange)."""
+        if not pos.db_id:
+            return
+        self._conn.execute(
+            "UPDATE open_positions SET amount=?, entry_price=?, entry_fee=? WHERE id=?",
+            (pos.amount, pos.entry_price, pos.entry_fee, pos.db_id),
         )
         self._conn.commit()
 

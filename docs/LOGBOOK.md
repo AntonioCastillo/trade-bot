@@ -4,6 +4,8 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-08 | Despliegue Automático desde GitHub (el VPS Consulta la Rama `production`) y Parada Ordenada](#2026-10-08--despliegue-automático-desde-github-el-vps-consulta-la-rama-production-y-parada-ordenada)
+* [2026-10-08 | Equity Correcto tras un Reinicio y Corrección de Ejecuciones sin Confirmar](#2026-10-08--equity-correcto-tras-un-reinicio-y-corrección-de-ejecuciones-sin-confirmar)
 * [2026-10-07 | Filtro de Tendencia de la Propia Moneda en el Grid (EMA20 Diaria)](#2026-10-07--filtro-de-tendencia-de-la-propia-moneda-en-el-grid-ema20-diaria)
 * [2026-10-07 | Medición del Deslizamiento de Stops y Sondeo Rápido de Posiciones Abiertas](#2026-10-07--medición-del-deslizamiento-de-stops-y-sondeo-rápido-de-posiciones-abiertas)
 * [2026-10-04 | Tope de Exposición sobre el Equity y `volumen_explosivo` Ampliada a 7 Monedas](#2026-10-04--tope-de-exposición-sobre-el-equity-y-volumen_explosivo-ampliada-a-7-monedas)
@@ -15,6 +17,40 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-08 | Despliegue Automático desde GitHub (el VPS Consulta la Rama `production`) y Parada Ordenada
+
+* **Archivos Afectados:** [`.github/workflows/tests.yml`](../.github/workflows/tests.yml), [`deploy/autodeploy.sh`](../deploy/autodeploy.sh), [`deploy/tradebot-autodeploy.service`](../deploy/tradebot-autodeploy.service), [`deploy/tradebot-autodeploy.timer`](../deploy/tradebot-autodeploy.timer), [`deploy/DEPLOY.md`](../deploy/DEPLOY.md), [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`tests/test_graceful_stop.py`](../tests/test_graceful_stop.py)
+* **Motivo / Petición del Usuario:**
+  * El operador pidió despliegue y reinicio automáticos desde GitHub, en la variante en que el VPS consulta el repo (sin claves del VPS en GitHub ni SSH abierto a sus servidores; el repo es público), y pasar a trabajar con PR: lo que se fusiona en `main` se despliega.
+* **Cambios Implementados:**
+  1. **GitHub Actions:** tests en cada PR y en cada push a `main` (Python 3.11, como el VPS). Si pasan en `main`, la Action avanza la rama `production` a ese commit (solo hacia delante).
+  2. **`deploy/autodeploy.sh`** + temporizador de systemd cada 5 min: si `production` tiene un commit nuevo hace `merge --ff-only`, instala dependencias si cambiaron, reinicia y comprueba que aparece `Daemon iniciado` y el servicio sigue vivo. Si no arranca, vuelve al commit anterior y no lo reintenta. Avisa por Telegram.
+  3. **Salvaguardas:** no despliega alrededor del cierre de vela de 4 h (−5/+10 min), ni con ficheros modificados a mano en el VPS, ni hacia atrás; no reinstala `deploy/`. El script se instala copiado en `/usr/local/sbin`.
+  4. **Parada ordenada (`daemon._GracefulStop`):** el bot no atendía SIGTERM, así que un reinicio podía cortarlo entre enviar una orden y registrarla. Ahora, si está durmiendo sale al momento; si está a mitad de ciclo, lo termina y sale en la siguiente espera, por el mismo camino que Ctrl+C (aviso de parada, informe final, cierre de la base de datos).
+* **Riesgos asumidos:** desaparece la revisión manual del log antes de operar; los cambios de `config.yaml` también se despliegan solos; los tests no cubren la conexión real con KuCoin; las ejecuciones pendientes de confirmar se pierden en el reinicio.
+* **Verificación:** 280 tests pasando (5 nuevos en `tests/test_graceful_stop.py`). El script se probó en local contra un repo de juguete con `systemctl`, `runuser` y `curl` simulados (11 casos: sin cambios, aplazado por cierre de vela, despliegue, dependencias, commit que no arranca y vuelta atrás, cambios a mano, rama inexistente…). **Sin probar aún en el VPS ni en GitHub Actions.** Instalación: [`deploy/DEPLOY.md`](../deploy/DEPLOY.md) §9.
+
+---
+
+### 2026-10-08 | Equity Correcto tras un Reinicio y Corrección de Ejecuciones sin Confirmar
+
+* **Archivos Afectados:** [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/status.py`](../src/tradebot/status.py), [`src/tradebot/execution/live.py`](../src/tradebot/execution/live.py), [`src/tradebot/execution/base.py`](../src/tradebot/execution/base.py), [`src/tradebot/exchange.py`](../src/tradebot/exchange.py), [`src/tradebot/storage.py`](../src/tradebot/storage.py), [`src/tradebot/models.py`](../src/tradebot/models.py), [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`tests/test_fill_confirmation.py`](../tests/test_fill_confirmation.py)
+* **Motivo / Petición del Usuario:**
+  * Al cuadrar el equity del 7 al 8 de octubre con el export de operaciones faltaban 7,94 USDT. No era dinero: el status publicado justo tras el reinicio del día 7 (19:50 UTC) valoraba las tres posiciones readoptadas a su precio de entrada (2.282,55) en lugar de a mercado (2.274,70). Con el dato corregido, el descuadre queda en 0,09 USDT.
+  * El mismo export mostró dos operaciones con comisión incompleta: ADA (cerrada el 7-oct 02:01, comisión 0) y LTC (comprada el 7-oct 16:00, solo la comisión de venta), ambas con cantidades de muchos decimales. P&L realizado inflado en unos 0,9 USDT.
+* **Causa Técnica:**
+  1. `build_status` calculaba `engine.equity()` antes del bucle que pide los precios de las posiciones, y `Engine.equity` usa el precio de entrada cuando `last_prices` está vacío (siempre, tras un reinicio). Lo mismo afectaba al mensaje de arranque y a la base del cortafuegos diario.
+  2. `Exchange._await_fill` espera unos 3 s a que KuCoin refleje la ejecución. Si no llega (pasó en el desplome del 7-oct), `LiveExecutionEngine._to_fill` rellenaba con el precio de referencia, la cantidad pedida y comisión 0, y ese registro nunca se corregía. En una venta por stop, además, el deslizamiento medido salía falso (precio sondeado en vez del de venta).
+* **Cambios Implementados:**
+  1. `Engine.load_positions` pide el precio de mercado de las posiciones readoptadas (`_seed_last_prices`, una consulta; si falla, sigue como antes), y `build_status` calcula el equity después de las posiciones.
+  2. `Fill` lleva `order_id` y `confirmed`. Una ejecución sin confirmar se registra igual (la venta no espera más de lo que esperaba), queda apuntada en el motor y `Engine.reconcile_fills()` la vuelve a consultar una vez por ciclo (`ExecutionEngine.confirm_fill` → `Exchange.fetch_order_fill`), hasta 30 ciclos.
+     * **Compra confirmada:** corrige precio de entrada, cantidad y comisión de la posición abierta y lo persiste (`Storage.update_open_position_entry`). Stop y objetivo no se mueven.
+     * **Venta confirmada:** corrige precio de salida, comisión y P&L de la operación ya guardada (`Storage.update_closed_trade`), escribe la línea en el log de la cabeza y avisa por Telegram.
+* **Límites:** las pendientes no sobreviven a un reinicio (quedan con los datos estimados y un aviso en el log con el id de la orden); si la compra se confirma con la posición ya cerrada, esa operación conserva la entrada estimada; en una toma parcial se corrigen precio y comisión, no la cantidad. Las dos operaciones antiguas (ADA y LTC) no se han retocado en la base de datos.
+* **Verificación:** 275 tests pasando (12 nuevos en `tests/test_fill_confirmation.py`). Sin probar contra KuCoin real: el caso solo se da cuando el exchange va con retraso.
 
 ---
 
