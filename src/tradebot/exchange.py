@@ -299,6 +299,12 @@ class Exchange:
             time.sleep(delay)
         return result
 
+    def fetch_order_fill(self, order_id: str, symbol: str) -> dict | None:
+        """Consulta UNA vez una orden ya enviada. Devuelve la orden si ya consta su
+        ejecución, o None si el exchange todavía no la refleja."""
+        result = self._client.fetch_order(order_id, self._normalize_symbol(symbol))
+        return result if float(result.get("filled") or 0) > 0 else None
+
     def create_market_buy(self, symbol: str, cost: float) -> dict:
         """Compra a mercado gastando `cost` en moneda de cotización (USDT).
 

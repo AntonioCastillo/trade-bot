@@ -59,10 +59,6 @@ def active_heads(config) -> list[dict]:
 def build_status(engine, config) -> dict[str, Any]:
     """Snapshot estructurado del estado del bot (solo lo persistido/calculable)."""
     s = engine.storage.summary()
-    try:
-        equity = round(engine.equity(), 2)
-    except Exception:
-        equity = None
 
     by_head: list[dict] = []
     try:
@@ -106,6 +102,13 @@ def build_status(engine, config) -> dict[str, Any]:
             })
     except Exception:
         pass
+
+    # Después de las posiciones: el bucle anterior deja en `last_prices` el precio de
+    # mercado de cada una. Calculado antes, tras un reinicio las valoraba a su entrada.
+    try:
+        equity = round(engine.equity(), 2)
+    except Exception:
+        equity = None
 
     try:
         paused_heads = engine.paused_heads()

@@ -1,0 +1,47 @@
+# Tests en cada PR y en cada push a main. Si pasan en main, la rama `production`
+# avanza a ese commit; el VPS sigue esa rama y se despliega solo (deploy/DEPLOY.md, §9).
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # la misma versión que el VPS
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  promote:
+    name: avanzar production
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Mover production a este commit (solo hacia delante)
+        run: |
+          if git fetch origin production 2>/dev/null \
+             && git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "production ya contiene $GITHUB_SHA: nada que hacer"
+            exit 0
+          fi
+          git push origin "$GITHUB_SHA:refs/heads/production"

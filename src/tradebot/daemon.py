@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import threading
 import time
 from datetime import datetime, timezone
@@ -250,6 +251,45 @@ def _maybe_first_run_api_check(engine: Engine, config: Config) -> None:
         )
 
 
+class _GracefulStop:
+    """Parada ordenada ante SIGTERM (`systemctl stop/restart`, despliegue automático).
+
+    Si el bot está durmiendo entre ciclos, sale al momento. Si está a mitad de ciclo
+    (puede haber una orden enviada y aún sin registrar), termina ese trabajo y sale
+    en la siguiente espera. La salida usa el mismo camino que Ctrl+C."""
+
+    def __init__(self, sleep=None):
+        self._sleep = sleep                   # None = time.sleep, resuelto al dormir
+        self.requested = False
+        self._sleeping = False
+
+    def install(self) -> bool:
+        if threading.current_thread() is not threading.main_thread():
+            return False                      # las señales solo se atienden en el hilo principal
+        try:
+            signal.signal(signal.SIGTERM, self._on_signal)
+        except (ValueError, OSError, AttributeError):
+            return False
+        return True
+
+    def _on_signal(self, signum, frame) -> None:
+        # Sin logs aquí: el manejador puede interrumpir una escritura de log a medias.
+        self.requested = True
+        if self._sleeping:
+            raise KeyboardInterrupt
+
+    def sleep(self, seconds: float) -> None:
+        if self.requested:
+            raise KeyboardInterrupt
+        self._sleeping = True
+        try:
+            (self._sleep or time.sleep)(seconds)
+        finally:
+            self._sleeping = False
+        if self.requested:
+            raise KeyboardInterrupt
+
+
 def _poll_open_exits(engine: Engine, candles_cache: dict) -> None:
     """Sondeo rápido: UNA consulta de precios para las posiciones abiertas y evaluación
     de sus salidas (stop / parcial / objetivo / trailing). No abre posiciones."""
@@ -446,6 +486,9 @@ def run_forever(
     except Exception:
         logger.warning("Fallo en el escaneo inicial del radar de funding")
 
+    stopper = _GracefulStop()
+    stopper.install()
+
     try:
         while True:
             try:
@@ -544,10 +587,17 @@ def run_forever(
                 logger.exception("Error inesperado en el bucle principal; continúo")
                 _notify_fail("en el bucle principal", exc)
 
-            _wait_cycle(engine, interval, exit_poll, candles_cache)
+            # Corrige las operaciones que el exchange no confirmó a tiempo (precio y comisión reales).
+            try:
+                engine.reconcile_fills()
+            except Exception:
+                logger.exception("No pude confirmar las ejecuciones pendientes; lo reintento en el próximo ciclo")
+
+            _wait_cycle(engine, interval, exit_poll, candles_cache, sleep=stopper.sleep)
 
     except KeyboardInterrupt:
-        logger.info("Interrumpido por el usuario. Guardando informe final y cerrando.")
+        logger.info("%s. Guardando informe final y cerrando.",
+                    "Parada solicitada (SIGTERM)" if stopper.requested else "Interrumpido por el usuario")
     finally:
         try:
             engine.notifier.notify("🛑 <b>Bot detenido</b>")
