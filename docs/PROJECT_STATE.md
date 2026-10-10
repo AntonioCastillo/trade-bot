@@ -55,7 +55,7 @@ En lugar de forzar una única estrategia para todos los mercados, el bot desplie
 2. **Toma Parcial 50% @ +5%:** Al llegar al +5% de ganancia, vende la mitad y asegura el dinero en caja.
 3. **Stop Loss a Breakeven Inmediato:** Tras la toma parcial, el Stop Loss restante se fija en el precio de entrada (Riesgo Cero).
 4. **Chandelier Trailing Stop:** Deja correr el 50% restante con un trailing stop dinámico basado en ATR (cabezas diarias). `volumen_explosivo` usa trailing fijo del 8% desde 2026-10-04.
-5. **Reglas de pausa por cabeza (2026-10-04):** `strike_pause` (N stops con pérdida en una ventana pausan la cabeza) y `paused_while_open` (no abre mientras otra cabeza tenga posiciones). Activas en `grid_lateral`: 3 stops en 7 días → 30 días de pausa, y pausa mientras `tendencia_alcista` tenga posiciones. Solo bloquean entradas; el estado persiste en la BD.
+5. **Reglas de pausa por cabeza (2026-10-04):** `strike_pause` (N stops con pérdida en una ventana pausan la cabeza) y `paused_while_open` (no abre mientras otra cabeza tenga posiciones). Activas en `grid_lateral`: 3 stops en 7 días → 30 días de pausa, y pausa mientras `tendencia_alcista` tenga posiciones. Solo bloquean entradas; el estado persiste en la BD. Desde 2026-10-11 hay además pausa manual por cabeza (`manage.py pause/resume/pauses`) y el grid opera al 6% del saldo libre por operación (antes 12%).
 
 ---
 
