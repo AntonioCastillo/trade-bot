@@ -225,8 +225,28 @@ def test_wait_cycle_disabled_or_failing_never_breaks_the_loop():
 
     clock = FakeClock()
     _wait_cycle(engine, 60, 10, {}, sleep=clock.sleep, clock=clock.clock)
-    assert clock.sleeps == [10, 50]                        # falla el sondeo: espera el resto del ciclo
+    assert clock.sleeps == [10] * 6                        # falla el sondeo: pierde ese y sigue sondeando
+    assert len(engine.exchange.calls) == 5                 # lo reintenta en cada intervalo
     assert len(engine.positions) == 1
+
+
+def test_wait_cycle_recovers_after_a_failed_poll():
+    exchange = FakeExchange({"ADA/USDT": 1.00}, fail=True)
+    engine = _engine(exchange)
+    engine.process("ADA/USDT", _candles(1.00))
+    engine.strategies["ADA/USDT"].buy = False
+    clock = FakeClock()
+
+    def sleep(seconds):
+        clock.sleep(seconds)
+        if clock.now >= 20:                                # KuCoin vuelve a responder, con el precio bajo el stop
+            exchange.fail, exchange.prices = False, {"ADA/USDT": 0.90}
+
+    _wait_cycle(engine, 60, 10, {}, sleep=sleep, clock=clock.clock)
+
+    assert engine.positions == []                          # el stop salta en el sondeo siguiente al fallido
+    assert engine.storage.all_trades()[0]["exit_reason"] == "stop-loss"
+    assert clock.now == 60
 
 
 def test_exchange_fetch_last_prices_single_request():

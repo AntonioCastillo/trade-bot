@@ -20,6 +20,14 @@ logger = logging.getLogger(__name__)
 OHLCV_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
 
 
+def is_rate_limited(exc: BaseException) -> bool:
+    """¿Es un rechazo por exceso de peticiones? KuCoin responde a veces con el código
+    429000 ("Too many requests. System-level rate limit exceeded."), que ccxt no
+    reconoce y lanza como ExchangeError genérico en vez de RateLimitExceeded."""
+    text = str(exc).lower()
+    return "429000" in text or "too many requests" in text
+
+
 def with_network_retry(
     func=None,
     *,
@@ -31,7 +39,8 @@ def with_network_retry(
     """Decorador para reintentar operaciones de red transitorias con exponential backoff y jitter.
 
     Captura errores de red y rate limits (ccxt.NetworkError, ccxt.RateLimitExceeded,
-    ConnectionError, etc.) y reintenta con backoff. Propaga inmediatamente errores fatales
+    ConnectionError, etc., y el 429000 de KuCoin, ver `is_rate_limited`) y reintenta con
+    backoff. Propaga inmediatamente errores fatales
     (ccxt.AuthenticationError, ccxt.InsufficientFunds, ccxt.InvalidOrder, etc.).
     """
     def decorator(fn):
@@ -66,7 +75,9 @@ def with_network_retry(
                     return fn(*args, **kwargs)
                 except fatal_exceptions:
                     raise
-                except retryable_exceptions as exc:
+                except Exception as exc:
+                    if not isinstance(exc, retryable_exceptions) and not is_rate_limited(exc):
+                        raise
                     if attempt == max_retries:
                         logger.error(
                             "Fallo definitivo tras %d intentos en %s: %s",

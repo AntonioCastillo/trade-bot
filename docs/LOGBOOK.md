@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-10 | Rechazos 429 de KuCoin: Reintento y Sondeo Rápido que no se Detiene](#2026-10-10--rechazos-429-de-kucoin-reintento-y-sondeo-rápido-que-no-se-detiene)
 * [2026-10-08 | El Gist Publicaba el Status con 15 Minutos de Retraso](#2026-10-08--el-gist-publicaba-el-status-con-15-minutos-de-retraso)
 * [2026-10-08 | Despliegue Automático desde GitHub (el VPS Consulta la Rama `production`) y Parada Ordenada](#2026-10-08--despliegue-automático-desde-github-el-vps-consulta-la-rama-production-y-parada-ordenada)
 * [2026-10-08 | Equity Correcto tras un Reinicio y Corrección de Ejecuciones sin Confirmar](#2026-10-08--equity-correcto-tras-un-reinicio-y-corrección-de-ejecuciones-sin-confirmar)
@@ -18,6 +19,23 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-10 | Rechazos 429 de KuCoin: Reintento y Sondeo Rápido que no se Detiene
+
+* **Archivos Afectados:** [`src/tradebot/exchange.py`](../src/tradebot/exchange.py), [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`tests/test_exchange_resilience.py`](../tests/test_exchange_resilience.py), [`tests/test_stop_tracking.py`](../tests/test_stop_tracking.py)
+* **Motivo / Petición del Usuario:**
+  * Llegó a Telegram un fallo «Too many requests» al leer las velas de BNB. En el log, KuCoin había rechazado además unos 13 sondeos rápidos al día con `429000 Too many requests. System-level rate limit exceeded.`
+  * Recuento por día: 2 rechazos el 12-sep y ninguno más hasta el 7-oct; desde que se activó el sondeo cada 10 s (7-oct, 19:50 UTC): 7, 14, 13 y 3 (hasta las 09:00 del día 10). Casi todos caen entre 10 y 20 s después del minuto, justo tras la ráfaga de consultas del ciclo. Son en torno al 0,15% de los sondeos.
+* **Causa Técnica:**
+  1. ccxt 4.5.70 no reconoce el código `429000` de KuCoin y lo lanza como `ExchangeError` genérico, no como `RateLimitExceeded`: `with_network_retry` no lo reintentaba y el fallo llegaba a Telegram a la primera.
+  2. Al fallar un sondeo rápido, `_wait_cycle` dejaba de sondear hasta el ciclo siguiente: hasta 50 s sin vigilar los stops, y KuCoin rechaza más justo cuando el mercado se mueve.
+* **Cambios Implementados:**
+  1. `exchange.is_rate_limited` reconoce el rechazo por su texto y `with_network_retry` lo reintenta con la misma espera creciente que el resto de errores transitorios.
+  2. `_wait_cycle` pierde solo el sondeo que falla y hace el siguiente a su hora.
+* **No se ha cambiado:** la frecuencia del sondeo ni la consulta que usa (todos los precios de KuCoin en una petición). Si los rechazos crecen, lo siguiente sería pedir solo el precio de las monedas con posición o separar el primer sondeo de la ráfaga del ciclo.
+* **Verificación:** 288 tests pasando (4 nuevos y uno adaptado).
 
 ---
 
