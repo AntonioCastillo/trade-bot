@@ -318,8 +318,9 @@ def _wait_cycle(engine: Engine, interval: float, exit_poll_seconds: float, candl
                 sleep=time.sleep, clock=time.monotonic) -> None:
     """Espera `interval` hasta el siguiente ciclo. Si el sondeo rápido está activo y hay
     posiciones abiertas, comprueba sus salidas cada `exit_poll_seconds` en vez de dormir
-    de un tirón. Un fallo del sondeo no rompe el bucle: se espera el resto y el ciclo
-    normal vuelve a comprobarlas."""
+    de un tirón. Un fallo del sondeo no rompe el bucle ni lo detiene: se pierde solo
+    ese sondeo y el siguiente se hace a su hora (KuCoin rechaza alguno de vez en cuando,
+    y más cuando el mercado se mueve, que es cuando más falta hace vigilar)."""
     if exit_poll_seconds <= 0:
         sleep(interval)
         return
@@ -337,11 +338,7 @@ def _wait_cycle(engine: Engine, interval: float, exit_poll_seconds: float, candl
         try:
             _poll_open_exits(engine, candles_cache)
         except Exception as exc:
-            logger.warning("Sondeo rápido de salidas falló (%s); espero al ciclo normal", exc)
-            remaining = deadline - clock()
-            if remaining > 0:
-                sleep(remaining)
-            return
+            logger.warning("Sondeo rápido de salidas falló (%s); sigo con el siguiente", exc)
 
 
 def _live_preflight(engine: Engine, config: Config, symbols: list[str]) -> None:
