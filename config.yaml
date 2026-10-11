@@ -96,7 +96,7 @@ universe:
     risk:
       stop_loss_pct: 0.05
       take_profit_pct: 0.025
-      position_size_pct: 0.12
+      position_size_pct: 0.06          # reducido del 12% (2026-10-11): cada stop cuesta la mitad
       max_concurrent_per_symbol: 3
 
   # 🟢 Caza de Pánicos (Capitulación / Comprar caídas extremas con RSI < 20)

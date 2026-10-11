@@ -9,6 +9,9 @@ Uso:
     python scripts/manage.py close-carry [--dry-run]
     python scripts/manage.py report [db_path]
     python scripts/manage.py export [db_path] [-o FILE]
+    python scripts/manage.py pause CABEZA [--days N]     # pausa manual (sin --days: hasta reanudar)
+    python scripts/manage.py resume CABEZA               # levanta la pausa manual y la de strikes
+    python scripts/manage.py pauses                      # qué cabezas están en pausa
     python scripts/manage.py verify-api [--usd USD] [--symbol SYMBOL]
     python scripts/manage.py backtest [--limit N] [--config PATH]
 """
@@ -68,6 +71,71 @@ def cmd_export(args: argparse.Namespace) -> None:
     export_main()
 
 
+def _pause_context():
+    """Config, almacenamiento del bot y lista de cabezas activas."""
+    from tradebot.config import load_config
+    from tradebot.storage import Storage
+
+    config = load_config()
+    db_path = config.effective_db_path()
+    if not Path(db_path).exists():
+        print(f"No existe la base de datos: {db_path}")
+        sys.exit(1)
+    heads = list(dict.fromkeys(ins.category for ins in config.instruments))
+    return config, Storage(db_path), heads
+
+
+def _tell_telegram(config, text: str) -> None:
+    try:
+        from tradebot.notifier import build_notifier
+        build_notifier(config.telegram_token, config.telegram_chat_id).notify(text)
+    except Exception:
+        pass
+
+
+def _check_head(head: str, heads: list[str]) -> None:
+    if head not in heads:
+        print(f"Cabeza desconocida: {head}. Activas: {', '.join(heads)}")
+        sys.exit(1)
+
+
+def cmd_pause(args: argparse.Namespace) -> None:
+    from tradebot.pause_control import describe_until, pause_head
+
+    config, storage, heads = _pause_context()
+    _check_head(args.head, heads)
+    until = pause_head(storage, args.head, args.days)
+    storage.close()
+    print(f"{args.head}: en pausa manual {describe_until(until)}.")
+    print("No abrirá posiciones nuevas; las abiertas se siguen gestionando. Surte efecto sin reiniciar.")
+    _tell_telegram(config, f"⏸️ <b>Pausa manual</b>: {args.head}\n{describe_until(until).capitalize()}. "
+                           "Las posiciones abiertas se siguen gestionando.")
+
+
+def cmd_resume(args: argparse.Namespace) -> None:
+    from tradebot.pause_control import resume_head
+
+    config, storage, heads = _pause_context()
+    _check_head(args.head, heads)
+    lifted = resume_head(storage, args.head)
+    storage.close()
+    if not lifted:
+        print(f"{args.head}: no estaba en pausa.")
+        return
+    print(f"{args.head}: reanudada (pausa levantada: {' y '.join(lifted)}). Surte efecto sin reiniciar.")
+    _tell_telegram(config, f"▶️ <b>Cabeza reanudada a mano</b>: {args.head}\nPausa levantada: {' y '.join(lifted)}.")
+
+
+def cmd_pauses(args: argparse.Namespace) -> None:
+    from tradebot.pause_control import active_pauses
+
+    _, storage, heads = _pause_context()
+    pauses = active_pauses(storage, heads)
+    storage.close()
+    for head in heads:
+        print(f"{head}: " + ("; ".join(pauses[head]) if head in pauses else "operando"))
+
+
 def cmd_verify_api(args: argparse.Namespace) -> None:
     from verify_api import main as verify_main
     sys.argv = [sys.argv[0], str(args.usd), args.symbol]
@@ -111,6 +179,19 @@ def main() -> None:
     p_exp.add_argument("db_path", nargs="?", default=None, help="Ruta a la base de datos (opcional)")
     p_exp.add_argument("-o", "--output", default=None, help="Fichero CSV de salida (def: data/closed_trades.csv)")
     p_exp.set_defaults(func=cmd_export)
+
+    # pausa manual por cabeza
+    p_pause = subparsers.add_parser("pause", help="Pausa a mano una cabeza (solo entradas nuevas)")
+    p_pause.add_argument("head", help="Nombre de la cabeza, p. ej. grid_lateral")
+    p_pause.add_argument("--days", type=float, default=None, help="Días de pausa (sin indicar: hasta reanudar)")
+    p_pause.set_defaults(func=cmd_pause)
+
+    p_resume = subparsers.add_parser("resume", help="Levanta la pausa de una cabeza (manual y por strikes)")
+    p_resume.add_argument("head", help="Nombre de la cabeza")
+    p_resume.set_defaults(func=cmd_resume)
+
+    p_pauses = subparsers.add_parser("pauses", help="Lista las cabezas en pausa")
+    p_pauses.set_defaults(func=cmd_pauses)
 
     # verify-api
     p_ver = subparsers.add_parser("verify-api", help="Verifica las credenciales API con una micro-orden de prueba")

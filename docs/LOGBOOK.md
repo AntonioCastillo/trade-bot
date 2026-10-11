@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-11 | Pausa Manual por Cabeza y Grid al 6% por Operación](#2026-10-11--pausa-manual-por-cabeza-y-grid-al-6-por-operación)
 * [2026-10-10 | Rechazos 429 de KuCoin: Reintento y Sondeo Rápido que no se Detiene](#2026-10-10--rechazos-429-de-kucoin-reintento-y-sondeo-rápido-que-no-se-detiene)
 * [2026-10-08 | El Gist Publicaba el Status con 15 Minutos de Retraso](#2026-10-08--el-gist-publicaba-el-status-con-15-minutos-de-retraso)
 * [2026-10-08 | Despliegue Automático desde GitHub (el VPS Consulta la Rama `production`) y Parada Ordenada](#2026-10-08--despliegue-automático-desde-github-el-vps-consulta-la-rama-production-y-parada-ordenada)
@@ -19,6 +20,21 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-11 | Pausa Manual por Cabeza y Grid al 6% por Operación
+
+* **Archivos Afectados:** [`src/tradebot/pause_control.py`](../src/tradebot/pause_control.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`scripts/manage.py`](../scripts/manage.py), [`config.yaml`](../config.yaml), [`tests/test_manual_pause.py`](../tests/test_manual_pause.py), [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)
+* **Motivo / Petición del Usuario:**
+  * El operador ve el grid como una cabeza valiosa y peligrosa a la vez y pidió poder pausarlo a mano, además de la regla de strikes, y bajarle el tamaño.
+  * En real ganó con posiciones pequeñas y perdió con grandes: tamaño medio de 33 USDT en agosto, 73 en septiembre (14 de 14 ganadoras, +48,5 USDT) y 206–235 en octubre (7 de 7 del 1 al 4; 4 de 9 del 5 al 8, −31,7 USDT). El 26-sep había pasado del 6% al 12% y el capital creció con aportaciones.
+  * Antes de tocar la pausa se midieron alternativas a los strikes (grid solo y bot completo, desde 2022): cambiar los números (2–4 stops, ventanas de 3–14 días, pausas de 7–90 días) mueve el conjunto entre +153% y +166% (actual +160,4%; sin pausa +143,8%); reanudar cuando BTC vuelve sobre su EMA20, cuando recupera su máximo previo o tras 2–5 ganadoras seguidas "en sombra" es igual o peor (+145% a +161%). La regla de strikes se deja como está.
+* **Cambios Implementados:**
+  1. **Pausa manual** (`manage.py pause CABEZA [--days N]`, `resume CABEZA`, `pauses`): escribe en la tabla `state` de la BD del bot (`manual_pause_until:<cabeza>`), que el motor consulta en cada entrada, así que surte efecto **sin reiniciar**. Vale para cualquier cabeza, solo bloquea entradas nuevas y aparece en el gist y en Telegram como «manual …». `resume` levanta también una pausa por strikes vigente.
+  2. **`grid_lateral`: `position_size_pct` 0.12 → 0.06.** Cada stop cuesta la mitad (≈0,3% del saldo libre). Simulado desde 2022: el grid pasa de restar 3,6 puntos a restar 1,7 y el conjunto de +160,4% a +162,2% (de +94,9% a +98,3% con deslizamiento del 1%).
+* **Límites:** la pausa manual depende del criterio del operador y no se puede simular. Tras un `resume` de una pausa por strikes, los stops que la provocaron no vuelven a contar, pero tres nuevos en 7 días la reactivan.
+* **Verificación:** 296 tests pasando (8 nuevos en `tests/test_manual_pause.py`, incluido el caso de otra conexión escribiendo la pausa con el bot en marcha).
 
 ---
 

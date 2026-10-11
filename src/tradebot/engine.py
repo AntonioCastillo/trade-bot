@@ -445,6 +445,20 @@ class Engine:
 
     def _entry_pause_reason(self, instrument: Instrument) -> str | None:
         """Motivo por el que la cabeza no puede abrir ahora, o None si puede."""
+        # Pausa manual del operador (manage.py pause/resume): vale para cualquier cabeza.
+        from .pause_control import describe_until, manual_key
+        key = manual_key(instrument.category)
+        manual = self.storage.get_state(key) or 0.0
+        if manual:
+            if self._now().timestamp() < manual:
+                return f"en pausa manual {describe_until(manual)}"
+            self.storage.set_state(key, 0.0)              # pausa cumplida
+            logger.info("[%s] Pausa manual cumplida: vuelve a operar", instrument.category)
+            self.notifier.notify(
+                f"▶️ <b>Cabeza reanudada</b>: {instrument.category}\n"
+                "Termina la pausa manual; vuelve a poder abrir posiciones."
+            )
+
         for other in instrument.paused_while_open:
             if any(p.category == other for p in self.positions):
                 return f"en pausa mientras {other} tenga posiciones abiertas"
@@ -506,6 +520,7 @@ class Engine:
 
     def paused_heads(self) -> dict[str, str]:
         """Cabezas que ahora mismo no pueden abrir posiciones, con el motivo."""
+        from .pause_control import describe_until, manual_key
         out: dict[str, str] = {}
         if not self.enforce_pause_rules:
             return out
@@ -522,6 +537,9 @@ class Engine:
             if ins.strike_limit > 0 and now < until:
                 limit = datetime.fromtimestamp(until, tz=timezone.utc)
                 out[ins.category] = f"por strikes hasta {limit.isoformat(timespec='minutes')}"
+            manual = self.storage.get_state(manual_key(ins.category)) or 0.0
+            if now < manual:
+                out[ins.category] = f"manual {describe_until(manual)}"
         return out
 
     def emergency_close_all(self, reason: str = "emergency_close") -> None:

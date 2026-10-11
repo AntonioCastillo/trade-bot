@@ -62,6 +62,17 @@ tail -f /opt/tradebot/logs/heads/*.log    # log por cabeza
 cat /opt/tradebot/data/report.txt         # informe con métricas
 ```
 
+### Pausar una cabeza a mano
+```bash
+cd /opt/tradebot
+sudo -u tradebot .venv/bin/python scripts/manage.py pauses                       # qué está en pausa
+sudo -u tradebot .venv/bin/python scripts/manage.py pause grid_lateral --days 15 # 15 días
+sudo -u tradebot .venv/bin/python scripts/manage.py pause grid_lateral           # hasta que la reanudes
+sudo -u tradebot .venv/bin/python scripts/manage.py resume grid_lateral          # levanta la manual y la de strikes
+```
+Surte efecto sin reiniciar. Solo bloquea entradas nuevas: las posiciones abiertas se siguen
+gestionando. Se ve en el gist (`paused_heads`) y en el informe de Telegram.
+
 ## 6. Parar / reiniciar
 ```bash
 sudo systemctl stop tradebot
