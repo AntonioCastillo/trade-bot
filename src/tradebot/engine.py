@@ -61,6 +61,17 @@ class Engine:
         self.last_prices: dict[str, float] = {}
         self.closed_trades: list[ClosedTrade] = []
         self._unconfirmed: list[dict] = []   # ejecuciones con datos estimados, por confirmar
+        self._orphan_alert_at = 0.0          # último aviso de órdenes huérfanas no cancelables
+        from .exchange_stops import StopGuard
+        eng = getattr(config, "engine", None)
+        stops_on = (getattr(config, "mode", "") == "live" and exchange is not None
+                    and getattr(eng, "exchange_stops", False) is True)
+        self.stop_guard = StopGuard(
+            exchange,
+            buffer_pct=float(eng.exchange_stop_buffer_pct) if stops_on else 0.0,
+            min_move_pct=float(eng.exchange_stop_min_move_pct) if stops_on else 0.0,
+            enabled=stops_on,
+        )
 
     # --- Ciclo de decisión de un símbolo -------------------------------------------
 
@@ -238,13 +249,18 @@ class Engine:
             decision = self.risk.evaluate_exit(pos, current_price, current_atr=current_atr)
             if decision.order is not None:
                 if decision.order.reason == "partial-take-profit":
-                    if self._execute_partial_close(pos, decision.order):
+                    executed = self._stop_already_executed(pos)
+                    if executed:
+                        continue  # la vendió antes el stop del exchange
+                    if executed is False and self._execute_partial_close(pos, decision.order):
                         self.storage.update_open_position(pos)
+                        self._sync_stop(pos)   # nueva cantidad y stop en la entrada
                         still_open.append(pos)
                         continue
                 elif self._close_position(pos, decision.order):
                     continue  # cerrada con éxito -> no se mantiene
             self.storage.update_open_position(pos)   # persistir trailing/bars_held/partial_tp
+            self._sync_stop(pos)                     # el stop del exchange sigue al del bot
             still_open.append(pos)
         self.positions = still_open
 
@@ -413,6 +429,7 @@ class Engine:
         self.positions.append(position)
         self.storage.save_open_position(position)   # persistir para reinicios
         self._track_unconfirmed("entry", fill, position=position)
+        self._sync_stop(position)
         self._save_cash()
         quote = self.config.risk.quote_currency
         equity = self.equity()
@@ -637,6 +654,11 @@ class Engine:
 
     def _close_position(self, pos: Position, close_order) -> bool:
         import time
+        executed = self._stop_already_executed(pos)
+        if executed:
+            return True                               # la vendió antes el stop del exchange
+        if executed is None:
+            return False                              # estado dudoso: se reintenta en el siguiente sondeo
         fill = None
         last_err = None
         for attempt in range(1, 4):
@@ -659,6 +681,11 @@ class Engine:
             )
             return False
 
+        self._record_close(pos, fill, close_order.reason)
+        return True
+
+    def _record_close(self, pos: Position, fill, reason: str, note: str = "") -> None:
+        """Contabiliza el cierre completo de `pos` con la ejecución `fill`."""
         self.storage.record_fill(fill)
 
         direction = 1 if pos.side is Side.BUY else -1
@@ -672,9 +699,9 @@ class Engine:
             symbol=pos.symbol, category=pos.category, strategy_name=pos.strategy_name,
             side=pos.side, amount=pos.amount, entry_price=pos.entry_price,
             exit_price=fill.filled_price, fee_total=fee_total, pnl_abs=pnl_abs,
-            pnl_pct=pnl_pct, exit_reason=close_order.reason, opened_at=pos.opened_at,
+            pnl_pct=pnl_pct, exit_reason=reason, opened_at=pos.opened_at,
             # En los cierres por stop se guarda el nivel, para medir el deslizamiento real.
-            stop_price=pos.stop_loss if close_order.reason in STRIKE_EXIT_REASONS else None,
+            stop_price=pos.stop_loss if reason in STRIKE_EXIT_REASONS else None,
         )
         if trade.stop_slippage_pct is not None:
             logger.info(
@@ -690,25 +717,131 @@ class Engine:
         head = f"{pos.category}/{pos.strategy_name}"
         quote = self.config.risk.quote_currency
         equity = self.equity(exclude=pos)   # ya realizada: no contar su no-realizado
+        label = f"{reason}, {note}" if note else reason
         logger.info(
             "[%s] CIERRA %s %s @ %.6f (%s) | P&L %.2f (%.2f%%) | saldo=%.2f %s",
-            head, pos.symbol, pos.side.value, fill.filled_price, close_order.reason,
+            head, pos.symbol, pos.side.value, fill.filled_price, label,
             pnl_abs, pnl_pct, equity, quote,
         )
         self._log_head(pos.category,
-                       f"CIERRA {pos.symbol} ({close_order.reason}) P&L {pnl_abs:+.2f} ({pnl_pct:+.2f}%) | saldo {equity:.2f} {quote}")
+                       f"CIERRA {pos.symbol} ({label}) P&L {pnl_abs:+.2f} ({pnl_pct:+.2f}%) | saldo {equity:.2f} {quote}")
         self.notifier.notify_trade_closed(
             symbol=pos.symbol,
             entry_price=pos.entry_price,
             exit_price=fill.filled_price,
-            reason=close_order.reason,
+            reason=label,
             pnl_abs=pnl_abs,
             pnl_pct=pnl_pct,
             head=head,
             equity=equity,
             quote=quote,
         )
-        return True
+
+    # --- Stops de emergencia en el exchange (ver exchange_stops.py) ---------------------
+
+    def _sync_stop(self, pos: Position) -> None:
+        """Crea o repone la orden de stop del exchange de la posición, si procede."""
+        if self.stop_guard.enabled and self.stop_guard.sync(pos):
+            self.storage.update_stop_order(pos)
+            self.storage.set_state("exchange_stops_used", 1.0)   # hay órdenes que limpiar si se desactiva
+
+    def _stop_already_executed(self, pos: Position) -> bool | None:
+        """Retira la orden de stop del exchange antes de que el bot venda. Devuelve:
+          False -> el bot puede vender;
+          True  -> la orden ya se había ejecutado (el activo no está): cierre registrado;
+          None  -> no se sabe (la orden no está y no se pudo leer el saldo): reintentar luego."""
+        guard = self.stop_guard
+        if not guard.enabled or not pos.stop_order_id:
+            return False
+        status = guard.release(pos)
+        if status == "cancelled":
+            self.storage.update_stop_order(pos)
+            return False
+        gone = guard.position_gone(pos)
+        if gone:
+            self._finish_exchange_stop(pos)           # el activo no está: lo vendió el exchange
+            return True
+        if status == "error":
+            # No se pudo cancelar: vender es lo prioritario. Si la orden sigue viva, se
+            # cancelará como huérfana en el siguiente ciclo (KuCoin no bloquea el saldo).
+            return False
+        if gone is None:
+            return None
+        # La orden ya no existe pero el activo sigue ahí: el bot vende con normalidad.
+        pos.stop_order_id, pos.stop_order_price, pos.stop_order_amount = "", 0.0, 0.0
+        self.storage.update_stop_order(pos)
+        return False
+
+    def _finish_exchange_stop(self, pos: Position) -> None:
+        """Registra el cierre de una posición que vendió la orden de stop del exchange."""
+        from .models import Fill
+        reason = "trailing-stop" if (pos.trailing_stop_pct > 0 or pos.use_atr_trailing) else "stop-loss"
+        order = Order(pos.symbol, Side.SELL, pos.amount, pos.stop_order_price or pos.stop_loss, reason=reason)
+        fill = Fill(order=order, filled_price=order.price, filled_amount=pos.amount, fee=0.0,
+                    order_id=pos.stop_order_id or None, confirmed=False)
+        try:
+            real = self.execution.confirm_fill(fill)
+        except Exception as exc:
+            logger.debug("No pude leer la ejecución de la orden de stop %s (%s)", pos.stop_order_id, exc)
+            real = None
+        logger.warning(
+            "[%s] El stop de emergencia del exchange vendió %s (orden %s)%s",
+            pos.category, pos.symbol, pos.stop_order_id,
+            "" if real is not None else "; registro el precio de disparo y lo corrijo cuando el exchange lo confirme",
+        )
+        self._record_close(pos, real or fill, reason, note="stop del exchange")
+
+    def sync_exchange_stops(self) -> None:
+        """Una vez por ciclo y al arrancar: detecta las posiciones que vendió el exchange,
+        cancela las órdenes que hayan quedado sin posición y repone las que falten."""
+        guard = self.stop_guard
+        if not guard.enabled:
+            return
+        open_orders = guard.open_orders()
+        if open_orders is None:
+            return                                    # sin listado fiable no se toca nada
+        still: list[Position] = []
+        for pos in self.positions:
+            if pos.stop_order_id and pos.stop_order_id not in open_orders and not guard.is_recent(pos.stop_order_id):
+                gone = guard.position_gone(pos)
+                if gone:
+                    self._finish_exchange_stop(pos)
+                    continue
+                if gone is False:                     # la orden desapareció y el activo sigue: se repone
+                    logger.warning("[%s] La orden de stop %s ya no está en el exchange; la repongo", pos.symbol, pos.stop_order_id)
+                    pos.stop_order_id, pos.stop_order_price, pos.stop_order_amount = "", 0.0, 0.0
+                    self.storage.update_stop_order(pos)
+            still.append(pos)
+        self.positions = still
+        _, failed = guard.cancel_orphans(self.positions, open_orders)
+        if failed:
+            # Una orden viva sin posición puede vender una compra posterior de esa moneda.
+            logger.error("No pude cancelar órdenes de stop sin posición: %s", ", ".join(failed))
+            now = self._now().timestamp()
+            if now - self._orphan_alert_at > 3600:
+                self._orphan_alert_at = now
+                self.notifier.notify(
+                    "🆘 <b>Órdenes de stop sin posición que no puedo cancelar</b>\n"
+                    + "\n".join(failed)
+                    + "\nCancélalas a mano en KuCoin: podrían vender una compra posterior de esa moneda."
+                )
+        for pos in self.positions:
+            self._sync_stop(pos)
+
+    def release_exchange_stops(self) -> int:
+        """Con la opción desactivada: retira las órdenes de stop que hubiera dejado el bot."""
+        guard = self.stop_guard
+        if guard.enabled or self.config.mode != "live" or self.exchange is None:
+            return 0
+        if not self.storage.get_state("exchange_stops_used") and not any(p.stop_order_id for p in self.positions):
+            return 0                                  # nunca se usaron: no se consulta al exchange
+        n = guard.cancel_all(self.positions)
+        self.storage.set_state("exchange_stops_used", 0.0)
+        for pos in self.positions:
+            if pos.stop_order_id:
+                pos.stop_order_id, pos.stop_order_price, pos.stop_order_amount = "", 0.0, 0.0
+                self.storage.update_stop_order(pos)
+        return n
 
     # --- Ejecuciones sin confirmar ----------------------------------------------------
 
@@ -769,6 +902,7 @@ class Engine:
         pos.entry_price = real.filled_price
         # Stop y objetivo se dejan donde estaban: se fijaron con el precio de la señal.
         self.storage.update_open_position_entry(pos)
+        self._sync_stop(pos)                         # la cantidad real puede diferir de la estimada
         logger.info(
             "[%s] Compra confirmada (orden %s): precio %.6f -> %.6f, cantidad %.8f -> %.8f, comisión %.4f -> %.4f",
             pos.symbol, real.order_id, before[0], pos.entry_price, before[1], pos.amount, before[2], pos.entry_fee,
@@ -894,6 +1028,10 @@ class Engine:
             if pos.amount <= 0:
                 continue
             ratio = real / pos.amount
+
+            if ratio < self.RECONCILE_GONE_RATIO and pos.stop_order_id and self.stop_guard.enabled:
+                self._finish_exchange_stop(pos)       # la vendió el stop de emergencia con el bot parado
+                continue
 
             if ratio < self.RECONCILE_GONE_RATIO:
                 logger.warning(

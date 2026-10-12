@@ -12,6 +12,7 @@ Uso:
     python scripts/manage.py pause CABEZA [--days N]     # pausa manual (sin --days: hasta reanudar)
     python scripts/manage.py resume CABEZA               # levanta la pausa manual y la de strikes
     python scripts/manage.py pauses                      # qué cabezas están en pausa
+    python scripts/manage.py verify-stops [--symbol PAR] # prueba las órdenes de stop contra KuCoin (no opera)
     python scripts/manage.py verify-api [--usd USD] [--symbol SYMBOL]
     python scripts/manage.py backtest [--limit N] [--config PATH]
 """
@@ -136,6 +137,12 @@ def cmd_pauses(args: argparse.Namespace) -> None:
         print(f"{head}: " + ("; ".join(pauses[head]) if head in pauses else "operando"))
 
 
+def cmd_verify_stops(args: argparse.Namespace) -> None:
+    from verify_stops import main as verify_stops_main
+    sys.argv = [sys.argv[0], "--symbol", args.symbol]
+    verify_stops_main()
+
+
 def cmd_verify_api(args: argparse.Namespace) -> None:
     from verify_api import main as verify_main
     sys.argv = [sys.argv[0], str(args.usd), args.symbol]
@@ -192,6 +199,10 @@ def main() -> None:
 
     p_pauses = subparsers.add_parser("pauses", help="Lista las cabezas en pausa")
     p_pauses.set_defaults(func=cmd_pauses)
+
+    p_vs = subparsers.add_parser("verify-stops", help="Prueba las órdenes de stop contra KuCoin real (no opera)")
+    p_vs.add_argument("--symbol", type=str, default="ETH/USDT", help="Par a usar (def: ETH/USDT)")
+    p_vs.set_defaults(func=cmd_verify_stops)
 
     # verify-api
     p_ver = subparsers.add_parser("verify-api", help="Verifica las credenciales API con una micro-orden de prueba")

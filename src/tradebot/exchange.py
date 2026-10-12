@@ -343,6 +343,53 @@ class Exchange:
         order = self._client.create_order(symbol, "market", "sell", amount)
         return self._await_fill(order, symbol)
 
+    # --- Órdenes de stop en el exchange (red de seguridad; ver exchange_stops.py) -------
+
+    @staticmethod
+    def _stop_order_view(order: dict) -> dict:
+        """Campos que usa el bot de una orden de stop de ccxt."""
+        info = order.get("info") or {}
+        return {
+            "id": order.get("id") or info.get("id") or info.get("orderId"),
+            "client_id": order.get("clientOrderId") or info.get("clientOid"),
+            "symbol": order.get("symbol"),
+            "amount": order.get("amount"),
+            "trigger_price": order.get("triggerPrice") or order.get("stopPrice") or info.get("stopPrice"),
+            "status": order.get("status"),
+        }
+
+    def create_stop_sell(self, symbol: str, amount: float, trigger_price: float, client_id: str) -> dict:
+        """Orden de VENTA a mercado que se dispara si el precio cae a `trigger_price`.
+        KuCoin no bloquea el saldo hasta que se dispara. Sin reintentos: si la respuesta
+        se pierde, reintentar podría duplicar la orden."""
+        symbol = self._normalize_symbol(symbol)
+        self._client.load_markets()
+        amount = float(self._client.amount_to_precision(symbol, amount))
+        price = float(self._client.price_to_precision(symbol, trigger_price))
+        if amount <= 0 or price <= 0:
+            raise ValueError(f"{symbol}: cantidad o precio de stop no válidos ({amount}, {price})")
+        order = self._client.create_order(symbol, "market", "sell", amount, None,
+                                          {"stopLossPrice": price, "clientOid": client_id})
+        view = self._stop_order_view(order)
+        view.update(amount=amount, trigger_price=price, client_id=client_id, symbol=symbol)
+        return view
+
+    def cancel_stop_order(self, order_id: str, symbol: str) -> bool:
+        """Cancela una orden de stop aún sin disparar. False si ya no existe
+        (disparada, cancelada o desconocida); otros fallos se propagan."""
+        import ccxt
+        try:
+            self._client.cancel_order(order_id, self._normalize_symbol(symbol) if symbol else None, {"trigger": True})
+            return True
+        except (ccxt.OrderNotFound, ccxt.InvalidOrder):
+            return False
+
+    @with_network_retry
+    def fetch_open_stop_orders(self) -> list[dict]:
+        """Órdenes de stop vivas (sin disparar) de la cuenta."""
+        orders = self._client.fetch_open_orders(None, None, None, {"trigger": True})
+        return [self._stop_order_view(o) for o in orders]
+
     @with_network_retry
     def contract_size(self, symbol: str) -> float:
         symbol = self._normalize_symbol(symbol)

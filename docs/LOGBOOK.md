@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-12 | Stops de Emergencia en el Exchange (Apagados por Defecto)](#2026-10-12--stops-de-emergencia-en-el-exchange-apagados-por-defecto)
 * [2026-10-11 | Pausa Manual por Cabeza y Grid al 6% por Operación](#2026-10-11--pausa-manual-por-cabeza-y-grid-al-6-por-operación)
 * [2026-10-10 | Rechazos 429 de KuCoin: Reintento y Sondeo Rápido que no se Detiene](#2026-10-10--rechazos-429-de-kucoin-reintento-y-sondeo-rápido-que-no-se-detiene)
 * [2026-10-08 | El Gist Publicaba el Status con 15 Minutos de Retraso](#2026-10-08--el-gist-publicaba-el-status-con-15-minutos-de-retraso)
@@ -20,6 +21,27 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-12 | Stops de Emergencia en el Exchange (Apagados por Defecto)
+
+* **Archivos Afectados:** [`src/tradebot/exchange_stops.py`](../src/tradebot/exchange_stops.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/exchange.py`](../src/tradebot/exchange.py), [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`src/tradebot/storage.py`](../src/tradebot/storage.py), [`src/tradebot/models.py`](../src/tradebot/models.py), [`src/tradebot/config.py`](../src/tradebot/config.py), [`src/tradebot/status.py`](../src/tradebot/status.py), [`scripts/verify_stops.py`](../scripts/verify_stops.py), [`scripts/manage.py`](../scripts/manage.py), [`config.yaml`](../config.yaml), [`tests/test_exchange_stops.py`](../tests/test_exchange_stops.py)
+* **Motivo / Petición del Usuario:**
+  * Los stops los ejecuta el bot (sondea el precio y vende a mercado). Si el proceso o el servidor se caen con posiciones abiertas, no queda ningún stop. El operador pidió ponerlos en el exchange.
+  * No es la «fase 3» de la sección 6.4 del audit tal cual: el deslizamiento medido con el sondeo de 10 s es bajo (0,24% en 8 stops), así que no hace falta sustituir el stop del bot. Lo que faltaba era la protección ante una caída del bot.
+* **Diseño:** una orden de stop a mercado en KuCoin por posición, como **red de seguridad**: se coloca un 2% por debajo del stop del bot (`exchange_stop_buffer_pct`). En funcionamiento normal vende el bot, como hasta ahora, y la orden no llega a dispararse; así tampoco vende en las mechas cortas que el sondeo deja pasar (8% de los stops simulados, sección 6.4). Si el bot no está, la pérdida queda limitada al stop más ese margen.
+* **Cambios Implementados:**
+  1. `exchange_stops.StopGuard`: crea la orden al abrir la posición y la repone cuando el stop del bot sube al menos un 0,5% (`exchange_stop_min_move_pct`) o cambia la cantidad (toma parcial, compra confirmada). La cantidad nunca supera el saldo real de la moneda: una orden por más saldo del disponible no se ejecutaría.
+  2. Antes de cualquier venta del bot se cancela la orden. Si ya no existe y el activo no está en la cuenta, es que vendió el exchange: se registra el cierre con el precio real de la orden (o el de disparo, a corregir después con `reconcile_fills`) y **no se envía otra venta**.
+  3. `Engine.sync_exchange_stops()`, una vez por ciclo y al arrancar: detecta ventas hechas por el exchange (también con el bot parado), **cancela las órdenes huérfanas** y repone las que falten. Las órdenes del bot llevan el prefijo `tbstop-` en su `clientOid`; nunca se toca una orden ajena.
+  4. Si una orden huérfana no se puede cancelar, aviso por Telegram (como mucho uno por hora): podría vender una compra posterior de la misma moneda, porque KuCoin no bloquea saldo para estas órdenes.
+  5. Si se desactiva la opción, al arrancar se retiran las órdenes que hubiera dejado el bot.
+  6. El gist muestra `exchange_stop` (precio de disparo) en cada posición.
+  7. `manage.py verify-stops`: prueba contra KuCoin real crear, listar y cancelar una orden de stop mínima con el disparo un 50% por debajo del precio (no opera).
+* **Estado:** `engine.exchange_stops: false`. El código desplegado no hace ninguna llamada nueva al exchange hasta que se active. **Sin probar contra KuCoin real**: activar solo tras pasar `verify-stops` en el VPS.
+* **Riesgos conocidos:** (1) comportamientos de KuCoin que solo se confirman con órdenes reales, en especial cómo consultar el precio de una orden ya disparada; (2) cada venta por stop del bot hace antes una cancelación (unas décimas de segundo más); (3) una consulta más por ciclo y dos por cada reposición.
+* **Verificación:** 324 tests pasando (28 nuevos en `tests/test_exchange_stops.py`, con un exchange simulado: colocación, trailing, parcial, venta doble, mecha no vista, reinicio, huérfanas, fallos de red, desactivación).
 
 ---
 

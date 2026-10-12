@@ -97,6 +97,9 @@ class Storage:
             ("partial_tp_done", "INTEGER DEFAULT 0"),
             ("use_atr_trailing", "INTEGER DEFAULT 0"),
             ("atr_trailing_mult", "REAL DEFAULT 3.0"),
+            ("stop_order_id", "TEXT DEFAULT ''"),
+            ("stop_order_price", "REAL DEFAULT 0"),
+            ("stop_order_amount", "REAL DEFAULT 0"),
         ]:
             try:
                 self._conn.execute(f"ALTER TABLE open_positions ADD COLUMN {col_name} {col_type}")
@@ -193,6 +196,16 @@ class Storage:
         )
         self._conn.commit()
 
+    def update_stop_order(self, pos: Position) -> None:
+        """Persiste la orden de stop de emergencia de la posición (para reinicios)."""
+        if not pos.db_id:
+            return
+        self._conn.execute(
+            "UPDATE open_positions SET stop_order_id=?, stop_order_price=?, stop_order_amount=? WHERE id=?",
+            (pos.stop_order_id, pos.stop_order_price, pos.stop_order_amount, pos.db_id),
+        )
+        self._conn.commit()
+
     def update_open_position_entry(self, pos: Position) -> None:
         """Corrige la entrada de una posición abierta (compra registrada con datos
         estimados y confirmada después por el exchange)."""
@@ -232,6 +245,9 @@ class Storage:
                 atr_trailing_mult=float(r["atr_trailing_mult"]) if "atr_trailing_mult" in keys and r["atr_trailing_mult"] is not None else 3.0,
                 opened_at=datetime.fromisoformat(r["opened_at"]),
                 db_id=int(r["id"]),
+                stop_order_id=(r["stop_order_id"] or "") if "stop_order_id" in keys else "",
+                stop_order_price=float(r["stop_order_price"] or 0.0) if "stop_order_price" in keys else 0.0,
+                stop_order_amount=float(r["stop_order_amount"] or 0.0) if "stop_order_amount" in keys else 0.0,
             )
             out.append(pos)
         return out

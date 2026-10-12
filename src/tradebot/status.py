@@ -97,6 +97,8 @@ def build_status(engine, config) -> dict[str, Any]:
                 "stop_loss": round(p.stop_loss, 6),
                 "take_profit": round(p.take_profit, 6),
                 "partial_tp_done": getattr(p, "partial_tp_done", False),
+                # Disparo del stop de emergencia en el exchange (None si no tiene).
+                "exchange_stop": round(p.stop_order_price, 6) if getattr(p, "stop_order_id", "") else None,
                 "pnl_abs": round(pnl_abs, 2),
                 "pnl_pct": round(pnl_pct, 2),
                 "opened_at": p.opened_at.isoformat() if hasattr(p.opened_at, "isoformat") else str(p.opened_at),
