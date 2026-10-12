@@ -33,6 +33,12 @@ class EngineConfig:
     # Entre ciclo y ciclo, comprobar las salidas de las posiciones ABIERTAS cada N
     # segundos con una sola consulta de precios (0 = desactivado: solo una vez por ciclo).
     exit_poll_seconds: int = 0
+    # Stop de emergencia en el exchange por cada posición (solo live): protege si el
+    # bot o el servidor se caen. Se coloca `exchange_stop_buffer_pct` por debajo del
+    # stop del bot y solo se repone cuando este sube al menos `exchange_stop_min_move_pct`.
+    exchange_stops: bool = False
+    exchange_stop_buffer_pct: float = 0.02
+    exchange_stop_min_move_pct: float = 0.005
     fee_pct: float = 0.001
     slippage_pct: float = 0.0005
     report_interval_seconds: int = 900        # cada cuánto vuelca el informe a disco

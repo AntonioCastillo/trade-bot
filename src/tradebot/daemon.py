@@ -408,6 +408,20 @@ def run_forever(
     except Exception:
         logger.exception("No pude readoptar posiciones persistidas al arrancar")
 
+    # Stops de emergencia en el exchange: al arrancar se ponen los que falten, se
+    # registran las ventas que hiciera el exchange con el bot parado y se limpian restos.
+    try:
+        if engine.stop_guard.enabled:
+            engine.sync_exchange_stops()
+            logger.info("Stops de emergencia en el exchange ACTIVOS: un %.1f%% por debajo del stop del bot",
+                        config.engine.exchange_stop_buffer_pct * 100)
+        else:
+            retired = engine.release_exchange_stops()
+            if retired:
+                logger.warning("Stops de emergencia desactivados: %d órdenes retiradas del exchange", retired)
+    except Exception:
+        logger.exception("No pude sincronizar los stops del exchange al arrancar")
+
     # En LIVE, ancla el starting_balance al saldo REAL del exchange la PRIMERA vez
     # (y lo persiste): así el % de retorno del informe/status es coherente con el
     # dinero real y no se resetea en cada reinicio. En paper se usa el del config.
@@ -594,6 +608,12 @@ def run_forever(
                 engine.reconcile_fills()
             except Exception:
                 logger.exception("No pude confirmar las ejecuciones pendientes; lo reintento en el próximo ciclo")
+
+            # Stops de emergencia en el exchange: ventas hechas por el exchange, huérfanas y reposición.
+            try:
+                engine.sync_exchange_stops()
+            except Exception:
+                logger.exception("No pude sincronizar los stops del exchange; lo reintento en el próximo ciclo")
 
             # Status al día en cada ciclo (lo que sube el publicador al gist).
             _refresh_status(engine, config)

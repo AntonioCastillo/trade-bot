@@ -132,6 +132,11 @@ risk:
 engine:
   poll_interval_seconds: 60     # ciclo cada 60s
   exit_poll_seconds: 10         # entre ciclos, comprobar las salidas de las posiciones abiertas cada 10s
+  # Stop de emergencia EN KuCoin por cada posición, por si el bot o el servidor se caen.
+  # Antes de activarlo: `manage.py verify-stops` en el VPS (deploy/DEPLOY.md).
+  exchange_stops: false
+  exchange_stop_buffer_pct: 0.02      # disparo un 2% por debajo del stop del bot
+  exchange_stop_min_move_pct: 0.005   # se repone cuando el stop del bot sube al menos un 0,5%
   fee_pct: 0.0010              # comisión spot estándar (0.1%)
   slippage_pct: 0.0005          # deslizamiento estimado
   report_interval_seconds: 900  # informe cada 15 min

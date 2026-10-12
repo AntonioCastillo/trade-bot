@@ -73,6 +73,24 @@ sudo -u tradebot .venv/bin/python scripts/manage.py resume grid_lateral         
 Surte efecto sin reiniciar. Solo bloquea entradas nuevas: las posiciones abiertas se siguen
 gestionando. Se ve en el gist (`paused_heads`) y en el informe de Telegram.
 
+### Stops de emergencia en el exchange
+Por defecto están apagados (`engine.exchange_stops: false`). Protegen las posiciones si el
+bot o el servidor se caen: una orden de stop en KuCoin por posición, un 2% por debajo del
+stop del bot. Para activarlos:
+
+1. Comprobar que las llamadas funcionan con tu cuenta (no compra ni vende nada: pone una
+   orden de stop mínima con el disparo un 50% por debajo del precio y la cancela):
+   ```bash
+   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-stops
+   ```
+2. Solo si termina con «todo correcto», poner `exchange_stops: true` en `config.yaml`
+   (por PR, como cualquier cambio).
+3. Tras el despliegue, el log debe decir `Stops de emergencia en el exchange ACTIVOS` y cada
+   posición del gist debe traer `exchange_stop` con su precio de disparo.
+
+Si alguna vez llega el aviso «Órdenes de stop sin posición que no puedo cancelar»,
+cancélalas a mano en KuCoin: podrían vender una compra posterior de esa moneda.
+
 ## 6. Parar / reiniciar
 ```bash
 sudo systemctl stop tradebot

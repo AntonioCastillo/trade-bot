@@ -166,6 +166,10 @@ class Position:
     atr_trailing_mult: float = 3.0   # multiplicador ATR para Trailing Stop (p.ej. 3.0)
     opened_at: datetime = field(default_factory=_utcnow)
     db_id: int = 0                   # id de su fila en open_positions (0 = no persistida)
+    # Stop de emergencia en el exchange (solo live, si engine.exchange_stops está activo).
+    stop_order_id: str = ""
+    stop_order_price: float = 0.0
+    stop_order_amount: float = 0.0
 
     def unrealized_pnl(self, current_price: float) -> float:
         direction = 1 if self.side is Side.BUY else -1
