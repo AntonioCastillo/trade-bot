@@ -39,7 +39,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
   5. Si se desactiva la opción, al arrancar se retiran las órdenes que hubiera dejado el bot.
   6. El gist muestra `exchange_stop` (precio de disparo) en cada posición.
   7. `manage.py verify-stops`: prueba contra KuCoin real crear, listar y cancelar una orden de stop mínima con el disparo un 50% por debajo del precio (no opera).
-* **Estado:** `engine.exchange_stops: false`. El código desplegado no hace ninguna llamada nueva al exchange hasta que se active. **Sin probar contra KuCoin real**: activar solo tras pasar `verify-stops` en el VPS.
+* **Estado:** se desplegó apagado (`engine.exchange_stops: false`). **Activado el 2026-10-12** después de que `manage.py verify-stops` pasara sus siete comprobaciones en el VPS contra KuCoin real (crear, listar con identificador y par, cancelar, desaparecer del listado y detectar una segunda cancelación como «ya no existe»). Sigue sin verse en real el disparo de una orden.
 * **Riesgos conocidos:** (1) comportamientos de KuCoin que solo se confirman con órdenes reales, en especial cómo consultar el precio de una orden ya disparada; (2) cada venta por stop del bot hace antes una cancelación (unas décimas de segundo más); (3) una consulta más por ciclo y dos por cada reposición.
 * **Verificación:** 324 tests pasando (28 nuevos en `tests/test_exchange_stops.py`, con un exchange simulado: colocación, trailing, parcial, venta doble, mecha no vista, reinicio, huérfanas, fallos de red, desactivación).
 
