@@ -2,13 +2,14 @@
 
 El bot decide sus salidas sondeando el precio y vendiendo a mercado. Si el
 proceso o el servidor se caen, las posiciones abiertas quedarían sin stop. Este
-módulo mantiene, por cada posición, una orden de stop a mercado EN KuCoin, un
+módulo mantiene, por cada posición, una orden de stop a mercado EN el exchange, un
 poco por debajo del stop del bot (`exchange_stop_buffer_pct`), que actúa solo si
 el bot no llega a vender antes: red de seguridad, no sustituto del stop normal.
 
 Cómo se evita el mayor riesgo (una orden que sobreviva a su posición y venda una
-posterior de la misma moneda, porque KuCoin no bloquea saldo para estas órdenes):
-  - cada orden lleva un `clientOid` con el prefijo CLIENT_PREFIX;
+posterior de la misma moneda, porque ni KuCoin ni Bybit bloquean saldo para estas
+órdenes):
+  - cada orden lleva un identificador de cliente con el prefijo CLIENT_PREFIX;
   - antes de cualquier venta del bot se cancela la orden de la posición;
   - en cada ciclo y al arrancar se cancelan las órdenes con ese prefijo que no
     correspondan a una posición abierta (`cancel_orphans`).

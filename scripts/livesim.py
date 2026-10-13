@@ -56,6 +56,7 @@ WARMUP_DAYS = 91
 CACHE_FRESH_HOURS = 6        # no se vuelve a pedir al exchange una caché más reciente que esto
 AGG = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
 BTC = "BTC/USDT"
+EXCHANGE = "kucoin"          # de dónde salen las velas; `use_exchange` lo cambia
 
 
 # --- Datos ---------------------------------------------------------------------------
@@ -64,18 +65,28 @@ _client = None
 _memory: dict[tuple[str, str], tuple[pd.Timestamp, pd.DataFrame]] = {}
 
 
+def use_exchange(exchange: str, quote: str = "USDT") -> None:
+    """Simula con las velas de otro exchange (p.ej. 'bybiteu', 'USDC'). Cada uno
+    guarda su caché aparte; KuCoin conserva data/livesim."""
+    global EXCHANGE, CACHE_DIR, BTC, _client
+    EXCHANGE, BTC, _client = exchange, f"BTC/{quote}", None
+    CACHE_DIR = Path("data/livesim" if exchange == "kucoin" else f"data/livesim_{exchange}")
+    _memory.clear()
+
+
 def _download(symbol: str, timeframe: str, since: pd.Timestamp) -> pd.DataFrame:
     global _client
     if _client is None:
         import ccxt
 
-        _client = ccxt.kucoin({"enableRateLimit": True})
+        _client = getattr(ccxt, EXCHANGE)({"enableRateLimit": True})
     client = _client
+    page = 1500 if EXCHANGE.startswith("kucoin") else 1000     # máximo de velas por petición
     rows: list[list] = []
     cursor = int(since.timestamp() * 1000)
     now = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)
     while True:
-        batch = client.fetch_ohlcv(symbol, timeframe, since=cursor, limit=1500)
+        batch = client.fetch_ohlcv(symbol, timeframe, since=cursor, limit=page)
         batch = [r for r in batch if not rows or r[0] > rows[-1][0]]
         if not batch:
             if not rows and cursor < now:       # aún no cotizaba: avanza hasta su listado
@@ -493,6 +504,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
+    use_exchange(config.exchange, config.risk.quote_currency)
     start = pd.Timestamp(args.start, tz="UTC")
     heads = fixed_heads(config)
     if args.head:

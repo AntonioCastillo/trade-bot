@@ -1,13 +1,15 @@
-"""Comprueba contra KuCoin REAL las llamadas que usan los stops de emergencia.
+"""Comprueba contra el exchange REAL las llamadas que usan los stops de emergencia.
 
 Pone UNA orden de stop de venta por la cantidad mínima, con el disparo un 50% por
 debajo del precio actual (no se va a ejecutar), la busca en el listado, la cancela
 y verifica que una segunda cancelación se detecta como "ya no existe". No compra
-ni vende nada. Ejecútalo antes de activar `engine.exchange_stops`.
+ni vende nada. Ejecútalo antes de activar `engine.exchange_stops`, y otra vez al
+cambiar de exchange: cada uno tiene sus propias llamadas.
 
 Uso (en el VPS, con las claves del bot):
-    python scripts/verify_stops.py                  # usa ETH/USDT
+    python scripts/verify_stops.py                  # usa ETH contra la moneda de cotización
     python scripts/verify_stops.py --symbol DOGE/USDT
+    python scripts/verify_stops.py --config config.bybiteu.yaml
 """
 
 from __future__ import annotations
@@ -25,22 +27,24 @@ except Exception:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from tradebot.config import load_config  # noqa: E402
+from tradebot.config import credential_env_names, load_config  # noqa: E402
 from tradebot.exchange import Exchange  # noqa: E402
 from tradebot.exchange_stops import CLIENT_PREFIX  # noqa: E402
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Verifica las órdenes de stop contra KuCoin real")
-    parser.add_argument("--symbol", default="ETH/USDT", help="Par a usar (def: ETH/USDT)")
+    parser = argparse.ArgumentParser(description="Verifica las órdenes de stop contra el exchange real")
+    parser.add_argument("--symbol", default=None, help="Par a usar (def: ETH contra la moneda de cotización)")
+    parser.add_argument("--config", default="config.yaml", help="Fichero de configuración (def: config.yaml)")
     args = parser.parse_args()
 
-    config = load_config()
+    config = load_config(args.config)
     if not config.credentials.is_complete:
-        print("Faltan las claves de KuCoin en .env")
+        print(f"Faltan las claves de {config.exchange_name} en .env ({', '.join(credential_env_names(config.exchange))})")
         sys.exit(1)
     exchange = Exchange(config)
-    symbol = args.symbol
+    symbol = args.symbol or f"ETH/{config.risk.quote_currency}"
+    print(f"Exchange: {config.exchange_name}")
     ok = True
 
     def step(name: str, passed: bool, detail: str = "") -> None:
@@ -95,7 +99,7 @@ def main() -> None:
                 exchange.cancel_stop_order(order_id, symbol)
                 print("  (orden de prueba retirada)")
             except Exception as exc:
-                print(f"  ATENCIÓN: no pude retirar la orden de prueba {order_id}: {exc}. Cancélala a mano en KuCoin.")
+                print(f"  ATENCIÓN: no pude retirar la orden de prueba {order_id}: {exc}. Cancélala a mano en {config.exchange_name}.")
 
     print("\nRESULTADO: " + ("todo correcto; se puede activar engine.exchange_stops" if ok else "hay fallos; NO actives engine.exchange_stops y pásame esta salida"))
     sys.exit(0 if ok else 1)

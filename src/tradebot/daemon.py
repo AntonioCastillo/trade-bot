@@ -21,7 +21,7 @@ from pathlib import Path
 
 from .carry import CarryRunner
 from .config import Config, load_config
-from .engine import Engine
+from .engine import Engine, ForeignPositionsError
 from .exchange import Exchange
 from .factory import build_engine
 from .funding_radar import evaluate_funding_radar
@@ -50,7 +50,6 @@ PUBLISH_INTERVAL_SECONDS = 900
 
 # Verificación de API en el PRIMER arranque live (solo una vez).
 API_CHECK_MARKER = "data/.api_verified"
-API_CHECK_SYMBOL = "BTC/USDT"
 API_CHECK_USD = 1.0
 
 
@@ -105,7 +104,7 @@ def _maybe_evaluate_rs(engine: Engine, config: Config, notify: bool = True) -> N
             pool = tuple(ins.rs_pool) if ins.rs_pool else ()
             if pool not in rankings_cache:
                 rankings_cache[pool] = compute_rs_rankings(
-                    engine.exchange, pool=ins.rs_pool or None, benchmark_symbol="BTC/USDT",
+                    engine.exchange, pool=ins.rs_pool or None, benchmark_symbol=config.reference_symbol,
                     lookback_days=ins.rs_lookback_days, timeframe="1d"
                 )
             rankings = rankings_cache[pool]
@@ -246,7 +245,7 @@ def _maybe_first_run_api_check(engine: Engine, config: Config) -> None:
                 API_CHECK_USD, config.risk.quote_currency)
     try:
         run_api_check(
-            engine.exchange, API_CHECK_SYMBOL, API_CHECK_USD,
+            engine.exchange, config.reference_symbol, API_CHECK_USD,
             config.risk.quote_currency, engine.notifier,
         )
         marker.parent.mkdir(parents=True, exist_ok=True)
@@ -319,7 +318,7 @@ def _wait_cycle(engine: Engine, interval: float, exit_poll_seconds: float, candl
     """Espera `interval` hasta el siguiente ciclo. Si el sondeo rápido está activo y hay
     posiciones abiertas, comprueba sus salidas cada `exit_poll_seconds` en vez de dormir
     de un tirón. Un fallo del sondeo no rompe el bucle ni lo detiene: se pierde solo
-    ese sondeo y el siguiente se hace a su hora (KuCoin rechaza alguno de vez en cuando,
+    ese sondeo y el siguiente se hace a su hora (el exchange rechaza alguno de vez en cuando,
     y más cuando el mercado se mueve, que es cuando más falta hace vigilar)."""
     if exit_poll_seconds <= 0:
         sleep(interval)
@@ -341,8 +340,20 @@ def _wait_cycle(engine: Engine, interval: float, exit_poll_seconds: float, candl
             logger.warning("Sondeo rápido de salidas falló (%s); sigo con el siguiente", exc)
 
 
+def _adopt_positions(engine: Engine) -> None:
+    """Readopta las posiciones persistidas. Un fallo cualquiera no impide arrancar,
+    salvo que las posiciones sean de otro exchange: operar así las dejaría sin gestionar
+    en el suyo, de modo que el bot no arranca (y el despliegue automático da marcha atrás)."""
+    try:
+        engine.load_positions()
+    except ForeignPositionsError:
+        raise
+    except Exception:
+        logger.exception("No pude readoptar posiciones persistidas al arrancar")
+
+
 def _live_preflight(engine: Engine, config: Config, symbols: list[str]) -> None:
-    """En modo live, avisa qué símbolos no llegan al mínimo de orden de KuCoin
+    """En modo live, avisa qué símbolos no llegan al mínimo de orden del exchange
     con el tamaño de posición actual (balance * position_size_pct)."""
     try:
         balance = engine.execution.get_balance()
@@ -403,10 +414,7 @@ def run_forever(
 
     # Readopta las posiciones abiertas persistidas (reinicio seguro): en vez de
     # dejarlas huérfanas, el motor sigue gestionando su SL/TP/trailing.
-    try:
-        engine.load_positions()
-    except Exception:
-        logger.exception("No pude readoptar posiciones persistidas al arrancar")
+    _adopt_positions(engine)
 
     # Stops de emergencia en el exchange: al arrancar se ponen los que falten, se
     # registran las ventas que hiciera el exchange con el bot parado y se limpian restos.

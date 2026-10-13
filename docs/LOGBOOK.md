@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-13 | Exchange Configurable: Soporte de Bybit EU para Migrar desde KuCoin](#2026-10-13--exchange-configurable-soporte-de-bybit-eu-para-migrar-desde-kucoin)
 * [2026-10-12 | Stops de Emergencia en el Exchange (Apagados por Defecto)](#2026-10-12--stops-de-emergencia-en-el-exchange-apagados-por-defecto)
 * [2026-10-11 | Pausa Manual por Cabeza y Grid al 6% por Operación](#2026-10-11--pausa-manual-por-cabeza-y-grid-al-6-por-operación)
 * [2026-10-10 | Rechazos 429 de KuCoin: Reintento y Sondeo Rápido que no se Detiene](#2026-10-10--rechazos-429-de-kucoin-reintento-y-sondeo-rápido-que-no-se-detiene)
@@ -21,6 +22,31 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-13 | Exchange Configurable: Soporte de Bybit EU para Migrar desde KuCoin
+
+* **Archivos Afectados:** [`src/tradebot/config.py`](../src/tradebot/config.py), [`src/tradebot/exchange.py`](../src/tradebot/exchange.py), [`src/tradebot/execution/live.py`](../src/tradebot/execution/live.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`scripts/verify_account.py`](../scripts/verify_account.py), [`scripts/verify_stops.py`](../scripts/verify_stops.py), [`scripts/verify_api.py`](../scripts/verify_api.py), [`scripts/manage.py`](../scripts/manage.py), [`scripts/livesim.py`](../scripts/livesim.py), [`config.bybiteu.yaml`](../config.bybiteu.yaml), [`tests/test_bybit_eu.py`](../tests/test_bybit_eu.py), [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)
+* **Motivo / Petición del Usuario:**
+  * Al entrar en KuCoin, el operador ve errores de que su zona no puede usar el servicio. El periodo transitorio de MiCA terminó en España el 1 de julio de 2026; KuCoin global no tiene autorización europea y su filial (KuCoin EU, licencia austriaca de noviembre de 2025) tiene prohibido iniciar operaciones por decisión de la FMA de 18-feb-2026, vigente en su último aviso (18-may-2026). Sus términos (29-sep-2026) permiten restringir cuentas sin preaviso. El bot seguía operando por API el 13-oct.
+  * Se midieron dos destinos con las 18 monedas del bot:
+    * **Kraken:** tabla de comisiones nueva desde el 9-jul-2026. El bot mueve ≈4.600 USD/mes con 2.250 de equity, lo que da 0,60% por operación a mercado (0,80% los meses flojos; 0,38% a partir de 10.000 USD/mes). Simulación desde 2022, todas las cabezas, cambiando solo la comisión: 0,10% → +161% (caída máx. 12%); 0,38% → +89%; 0,60% → +47% (`volumen_explosivo` ≈ 0); 0,80% → +17%. En euros (velas de KuCoin convertidas con EUR/USDT), +122% al 0,10% y +21% al 0,60%.
+    * **Bybit EU:** 0,10% y USDC. Con sus propias velas (solo hay historia desde oct-2025), de enero a octubre de 2026 y sin ETC, que no cotiza: +12,5% frente a +9,0% de KuCoin, pero solo 31 de 67 entradas coinciden (`volumen_explosivo` 14 de 44), porque su volumen es entre 10 y 100 veces menor.
+    * Liquidez (6 muestras del libro, ida y vuelta de 450 a mercado, mediana): KuCoin 0,035%, Bybit EU 0,040%, Kraken EUR 0,046%.
+  * El operador decidió migrar a Bybit EU y pidió preparar el código.
+* **Cambios Implementados:**
+  1. **`exchange: kucoin | bybiteu`** en la configuración (cualquier otro valor se rechaza). Las claves salen del `.env` según el exchange: `BYBIT_API_KEY` y `BYBIT_API_SECRET`, sin passphrase.
+  2. **Moneda de cotización:** el par de referencia (filtro macro de BTC, fuerza relativa, verificación de la API) es `BTC/<risk.quote_currency>` en vez de `BTC/USDT` fijo. Una configuración con pares en otra moneda se rechaza al cargar.
+  3. **Llamadas propias de Bybit** (`exchange.py`): mercado al contado por defecto; órdenes de stop como **orden condicional** (`triggerPrice`), que no bloquea saldo, igual que en KuCoin (la de TP/SL sí lo bloquea y rompería las ventas del bot); consulta de órdenes con respaldo en el historial; páginas de 1.000 velas.
+  4. **Comisión en la moneda comprada** (`execution/live.py`): Bybit cobra la comisión de las compras en la moneda comprada. La cantidad se anota neta y la comisión se convierte a la moneda de cotización, de modo que precio × cantidad + comisión sigue siendo lo pagado.
+  5. **Protección al cambiar:** en real, si quedan posiciones registradas en otra moneda de cotización, el bot no arranca (`ForeignPositionsError`). Reconciliarlas contra la cuenta nueva las daría por vendidas y anotaría cierres falsos.
+  6. **`config.bybiteu.yaml`:** la configuración real con USDC, sin ETC, en simulado, con los stops de emergencia y el radar de funding apagados. Un test vigila que no se desvíe de `config.yaml`.
+  7. **`manage.py verify-account`** (nuevo, no opera): pares, mínimos, saldo, comisión de la cuenta y listado de órdenes de stop. `verify-stops` y `verify-api` aceptan `--config`.
+  8. **`livesim.py`** simula con las velas del exchange de la configuración (`--config config.bybiteu.yaml`), con caché aparte.
+* **Estado:** nada cambia en real: `config.yaml` sigue en KuCoin. Comprobado contra la API pública de Bybit EU: los 17 pares existen, velas, precios en una consulta, historial paginado y un ciclo completo en simulado. **Sin probar:** todo lo que necesita claves. Los pasos, en `deploy/DEPLOY.md`, sección 10.
+* **Riesgos conocidos:** (1) las llamadas autenticadas de Bybit solo se confirman con la cuenta real (`verify-account`, `verify-api`, `verify-stops`); (2) la ventaja de `volumen_explosivo` está medida sobre el volumen de KuCoin; (3) Bybit EU solo tiene un año de historia propia, así que no se puede validar allí la configuración en varios ciclos.
+* **Verificación:** 346 tests pasando (22 nuevos en `tests/test_bybit_eu.py`).
 
 ---
 

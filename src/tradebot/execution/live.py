@@ -1,10 +1,12 @@
-"""Motor de ejecución real contra KuCoin.
+"""Motor de ejecución real contra el exchange configurado (KuCoin o Bybit EU).
 
 ATENCIÓN: envía órdenes con dinero real. Sólo se instancia con mode=live y
 credenciales válidas. Úsalo únicamente tras validar la estrategia en paper.
 
 Endurecido para dinero real:
-  - Compras por importe en USDT (semántica de KuCoin), ventas por cantidad base.
+  - Compras por importe en la moneda de cotización, ventas por cantidad base.
+  - La comisión se anota siempre en la moneda de cotización: si el exchange la cobra
+    en la moneda comprada (Bybit), se convierte y la cantidad queda neta.
   - Comprueba el tamaño mínimo de orden y la precisión; si no se cumple, lanza
     OrderRejected (el motor lo captura y no rompe el bucle).
 """
@@ -90,12 +92,23 @@ class LiveExecutionEngine(ExecutionEngine):
                 raise OrderRejected(f"{symbol}: saldo insuficiente en exchange ({exc})") from exc
             raise
 
+    @staticmethod
+    def _net_of_fee(order: Order, result: dict, price: float, amount: float) -> tuple[float, float]:
+        """(cantidad, comisión en moneda de cotización) de una orden ejecutada.
+        KuCoin cobra la comisión en la moneda de cotización. Bybit cobra la de las
+        COMPRAS en la moneda comprada: llega menos de lo ejecutado, así que se
+        descuenta de la cantidad y se valora al precio de la operación."""
+        fee_info = result.get("fee") or {}
+        fee = float(fee_info.get("cost") or 0.0)
+        if order.side is Side.BUY and fee > 0 and fee_info.get("currency") == order.symbol.split("/")[0]:
+            return max(amount - fee, 0.0), fee * price
+        return amount, fee
+
     def _to_fill(self, order: Order, result: dict) -> Fill:
         filled_price = float(result.get("average") or result.get("price") or order.price)
         filled_amount = float(result.get("filled") or order.amount)
-        fee_info = result.get("fee") or {}
-        fee = float(fee_info.get("cost") or 0.0)
-        # Si KuCoin no reflejó la ejecución a tiempo, lo de arriba son estimaciones
+        filled_amount, fee = self._net_of_fee(order, result, filled_price, filled_amount)
+        # Si el exchange no reflejó la ejecución a tiempo, lo de arriba son estimaciones
         # (precio de referencia, cantidad pedida, comisión 0): el motor las corrige después.
         confirmed = float(result.get("filled") or 0) > 0
         order_id = result.get("id") or (result.get("info") or {}).get("orderId")
@@ -119,12 +132,10 @@ class LiveExecutionEngine(ExecutionEngine):
         result = self.exchange.fetch_order_fill(fill.order_id, fill.order.symbol)
         if result is None:
             return None
-        fee_info = result.get("fee") or {}
+        price = float(result.get("average") or result.get("price") or fill.filled_price)
+        amount, fee = self._net_of_fee(fill.order, result, price, float(result["filled"]))
         return Fill(
-            order=fill.order,
-            filled_price=float(result.get("average") or result.get("price") or fill.filled_price),
-            filled_amount=float(result["filled"]),
-            fee=float(fee_info.get("cost") or 0.0),
+            order=fill.order, filled_price=price, filled_amount=amount, fee=fee,
             timestamp=fill.timestamp, order_id=fill.order_id, confirmed=True,
         )
 

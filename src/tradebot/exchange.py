@@ -1,4 +1,4 @@
-"""Capa de acceso al exchange (KuCoin) mediante ccxt.
+"""Capa de acceso al exchange (KuCoin o Bybit EU) mediante ccxt.
 
 Aísla el resto del bot de los detalles de la API. Para market data no hacen
 falta credenciales; sólo se usan al enviar órdenes reales (modo live).
@@ -99,10 +99,17 @@ def with_network_retry(
 
 
 class Exchange:
-    """Wrapper fino sobre ccxt.kucoin."""
+    """Wrapper fino sobre el cliente de ccxt del exchange configurado. Las diferencias
+    entre exchanges (parámetros de las órdenes de stop, consulta de órdenes, tamaño de
+    página de velas) se resuelven aquí; el resto del bot no las ve."""
+
+    _is_bybit = False
+    _ohlcv_page = 1500
 
     def __init__(self, config: Config):
         self.config = config
+        self._is_bybit = config.exchange.startswith("bybit")
+        self._ohlcv_page = 1000 if self._is_bybit else 1500     # máximo de velas por petición
         self._client = self._build_client()
 
     def _build_client(self):
@@ -110,25 +117,23 @@ class Exchange:
 
         params: dict = {
             "enableRateLimit": True,
-            # Ajusta la marca de tiempo a la hora del servidor de KuCoin para
-            # evitar "Invalid KC-API-TIMESTAMP" si el reloj local va desfasado.
+            # Ajusta la marca de tiempo a la hora del servidor del exchange para
+            # evitar rechazos de firma si el reloj local va desfasado.
             "options": {"adjustForTimeDifference": True},
         }
+        if self._is_bybit:
+            # ccxt asume derivados por defecto en Bybit; el bot solo opera al contado.
+            params["options"]["defaultType"] = "spot"
         creds = self.config.credentials
         if creds.is_complete:
-            params.update(
-                apiKey=creds.api_key,
-                secret=creds.api_secret,
-                password=creds.api_passphrase,
-            )
-        if self.config.exchange == "kucoinfutures":
-            client = ccxt.kucoinfutures(params)
-        else:
-            client = ccxt.kucoin(params)
+            params.update(apiKey=creds.api_key, secret=creds.api_secret)
+            if creds.api_passphrase:
+                params["password"] = creds.api_passphrase
+        client = getattr(ccxt, self.config.exchange)(params)
         if creds.is_complete:
             # Carga YA la diferencia con el reloj del servidor: sin esto, la
             # opción adjustForTimeDifference no tiene efecto en la primera
-            # petición firmada y KuCoin devuelve "Invalid KC-API-TIMESTAMP".
+            # petición firmada y el exchange la rechaza por la marca de tiempo.
             try:
                 client.load_time_difference()
             except Exception:
@@ -170,7 +175,7 @@ class Exchange:
     def fetch_ohlcv_history(
         self, symbol: str, timeframe: str, total: int
     ) -> pd.DataFrame:
-        """Descarga `total` velas paginando hacia atrás (KuCoin limita a ~1500
+        """Descarga `total` velas paginando hacia atrás (el exchange limita las velas
         por petición). Devuelve las `total` más recientes, ordenadas por tiempo."""
         symbol = self._normalize_symbol(symbol)
         tf_ms = self._client.parse_timeframe(timeframe) * 1000
@@ -178,7 +183,7 @@ class Exchange:
         since = now - total * tf_ms
         rows: list = []
         while since < now:
-            batch = self._client.fetch_ohlcv(symbol, timeframe, since=since, limit=1500)
+            batch = self._client.fetch_ohlcv(symbol, timeframe, since=since, limit=self._ohlcv_page)
             if not batch or len(batch) == 0:
                 break
             
@@ -270,6 +275,13 @@ class Exchange:
         total = balance.get("total") or {}
         return {k: float(v) for k, v in total.items() if v}
 
+    @with_network_retry
+    def fetch_trading_fee(self, symbol: str) -> dict[str, float]:
+        """Comisión que la cuenta paga en ese par: {'taker', 'maker'} en tanto por uno.
+        Requiere credenciales."""
+        fee = self._client.fetch_trading_fee(self._normalize_symbol(symbol))
+        return {"taker": float(fee["taker"]), "maker": float(fee["maker"])}
+
     # --- Metadatos de mercado (límites y precisión) --------------------------------
 
     @with_network_retry
@@ -292,8 +304,20 @@ class Exchange:
 
     # --- Órdenes reales (solo modo live) -------------------------------------------
 
+    def _fetch_order(self, order_id: str, symbol: str) -> dict:
+        """Consulta una orden por su identificador (símbolo ya normalizado)."""
+        if not self._is_bybit:
+            return self._client.fetch_order(order_id, symbol)
+        import ccxt
+        # Bybit: la consulta directa solo alcanza las últimas órdenes de la cuenta (ccxt
+        # exige reconocerlo); si ya no está ahí, se busca en el historial.
+        try:
+            return self._client.fetch_order(order_id, symbol, {"acknowledged": True})
+        except ccxt.OrderNotFound:
+            return self._client.fetch_closed_order(order_id, symbol)
+
     def _await_fill(self, order: dict, symbol: str, retries: int = 6, delay: float = 0.5) -> dict:
-        """KuCoin no devuelve la cantidad ejecutada al crear la orden (solo el ID):
+        """El exchange no devuelve la cantidad ejecutada al crear la orden (solo el ID):
         hay que consultar la orden después. Reintenta hasta que aparezca el fill."""
         symbol = self._normalize_symbol(symbol)
         order_id = order.get("id") or (order.get("info") or {}).get("orderId")
@@ -302,7 +326,7 @@ class Exchange:
         result = order
         for _ in range(retries):
             try:
-                result = self._client.fetch_order(order_id, symbol)
+                result = self._fetch_order(order_id, symbol)
             except Exception:
                 logger.warning("No pude consultar la orden %s todavía; reintento", order_id)
             if float(result.get("filled") or 0) > 0:
@@ -313,13 +337,13 @@ class Exchange:
     def fetch_order_fill(self, order_id: str, symbol: str) -> dict | None:
         """Consulta UNA vez una orden ya enviada. Devuelve la orden si ya consta su
         ejecución, o None si el exchange todavía no la refleja."""
-        result = self._client.fetch_order(order_id, self._normalize_symbol(symbol))
+        result = self._fetch_order(order_id, self._normalize_symbol(symbol))
         return result if float(result.get("filled") or 0) > 0 else None
 
     def create_market_buy(self, symbol: str, cost: float) -> dict:
-        """Compra a mercado gastando `cost` en moneda de cotización (USDT).
+        """Compra a mercado gastando `cost` en moneda de cotización.
 
-        KuCoin usa el importe en quote para las compras a mercado (`funds`), no
+        KuCoin y Bybit usan el importe en quote para las compras a mercado, no
         la cantidad de moneda base. ccxt lo maneja con la variante 'with_cost'."""
         symbol = self._normalize_symbol(symbol)
         self._client.load_markets()
@@ -351,7 +375,7 @@ class Exchange:
         info = order.get("info") or {}
         return {
             "id": order.get("id") or info.get("id") or info.get("orderId"),
-            "client_id": order.get("clientOrderId") or info.get("clientOid"),
+            "client_id": order.get("clientOrderId") or info.get("clientOid") or info.get("orderLinkId"),
             "symbol": order.get("symbol"),
             "amount": order.get("amount"),
             "trigger_price": order.get("triggerPrice") or order.get("stopPrice") or info.get("stopPrice"),
@@ -360,16 +384,20 @@ class Exchange:
 
     def create_stop_sell(self, symbol: str, amount: float, trigger_price: float, client_id: str) -> dict:
         """Orden de VENTA a mercado que se dispara si el precio cae a `trigger_price`.
-        KuCoin no bloquea el saldo hasta que se dispara. Sin reintentos: si la respuesta
-        se pierde, reintentar podría duplicar la orden."""
+        El exchange no bloquea el saldo hasta que se dispara (en Bybit se usa la orden
+        condicional, no la de TP/SL, que sí lo bloquearía). Sin reintentos: si la
+        respuesta se pierde, reintentar podría duplicar la orden."""
         symbol = self._normalize_symbol(symbol)
         self._client.load_markets()
         amount = float(self._client.amount_to_precision(symbol, amount))
         price = float(self._client.price_to_precision(symbol, trigger_price))
         if amount <= 0 or price <= 0:
             raise ValueError(f"{symbol}: cantidad o precio de stop no válidos ({amount}, {price})")
-        order = self._client.create_order(symbol, "market", "sell", amount, None,
-                                          {"stopLossPrice": price, "clientOid": client_id})
+        if self._is_bybit:
+            params = {"triggerPrice": price, "clientOrderId": client_id}
+        else:
+            params = {"stopLossPrice": price, "clientOid": client_id}
+        order = self._client.create_order(symbol, "market", "sell", amount, None, params)
         view = self._stop_order_view(order)
         view.update(amount=amount, trigger_price=price, client_id=client_id, symbol=symbol)
         return view
@@ -387,7 +415,8 @@ class Exchange:
     @with_network_retry
     def fetch_open_stop_orders(self) -> list[dict]:
         """Órdenes de stop vivas (sin disparar) de la cuenta."""
-        orders = self._client.fetch_open_orders(None, None, None, {"trigger": True})
+        # Bybit devuelve 20 por defecto; 50 es su máximo y sobra para las posiciones del bot.
+        orders = self._client.fetch_open_orders(None, None, 50 if self._is_bybit else None, {"trigger": True})
         return [self._stop_order_view(o) for o in orders]
 
     @with_network_retry

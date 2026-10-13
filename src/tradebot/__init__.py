@@ -1,4 +1,4 @@
-"""tradebot — bot de trading de criptomonedas para KuCoin.
+"""tradebot — bot de trading de criptomonedas (KuCoin o Bybit EU).
 
 Arquitectura por capas: market data -> strategy -> risk -> execution,
 orquestadas por el engine. Modo paper (simulación) por defecto.

@@ -108,6 +108,9 @@ Configura tus claves en `.env` (si operas en `live`):
 KUCOIN_API_KEY=tu_api_key
 KUCOIN_API_SECRET=tu_api_secret
 KUCOIN_API_PASSPHRASE=tu_passphrase
+# Con `exchange: bybiteu` (config.bybiteu.yaml), en su lugar:
+# BYBIT_API_KEY=tu_api_key
+# BYBIT_API_SECRET=tu_api_secret
 TELEGRAM_BOT_TOKEN=tu_token_telegram
 TELEGRAM_CHAT_ID=tu_chat_id
 GITHUB_TOKEN=tu_github_token_para_gist
