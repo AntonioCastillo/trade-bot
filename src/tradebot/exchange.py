@@ -19,6 +19,32 @@ logger = logging.getLogger(__name__)
 
 OHLCV_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
 
+# Un "último precio" a más de esto de la horquilla del propio ticker no es de fiar.
+PRICE_BAND_TOLERANCE = 0.01
+SUSPECT_LOG_SECONDS = 300.0      # como mucho un aviso por símbolo en este tiempo
+
+
+def ticker_price(ticker: dict, tolerance: float = PRICE_BAND_TOLERANCE) -> tuple[float | None, bool]:
+    """Precio utilizable de un ticker de ccxt y si su último precio es de fiar: (precio, fiable).
+
+    Si el exchange no manda el último precio, ccxt lo DEDUCE de otros campos (media y
+    variación de 24 h) y puede devolver un valor al que nunca se negoció: en KuCoin esa
+    "media" es la del día anterior, no la de apertura y cierre que ccxt supone. La
+    compra y la venta del libro sí vienen tal cual del exchange, así que sirven de
+    contraste: un último precio fuera de esa horquilla (más un margen) se descarta y se
+    devuelve el punto medio del libro con fiable=False.
+    Sin último precio se usa la mejor compra (o la venta), como hasta ahora."""
+    last = ticker.get("last") or ticker.get("close")
+    bid, ask = ticker.get("bid"), ticker.get("ask")
+    book = bool(bid and ask and 0 < bid <= ask)
+    if not last:
+        price = bid or ask
+        return (float(price) if price else None), True
+    last = float(last)
+    if book and not (bid * (1 - tolerance) <= last <= ask * (1 + tolerance)):
+        return (float(bid) + float(ask)) / 2, False
+    return last, True
+
 
 def is_rate_limited(exc: BaseException) -> bool:
     """¿Es un rechazo por exceso de peticiones? KuCoin responde a veces con el código
@@ -104,6 +130,18 @@ class Exchange:
     def __init__(self, config: Config):
         self.config = config
         self._client = self._build_client()
+
+    def _warn_suspect(self, symbol: str, ticker: dict, used: str) -> None:
+        """Deja constancia de un último precio descartado, sin llenar el log."""
+        seen = self.__dict__.setdefault("_suspect_logged", {})
+        now = time.monotonic()
+        if now - seen.get(symbol, -SUSPECT_LOG_SECONDS) < SUSPECT_LOG_SECONDS:
+            return
+        seen[symbol] = now
+        logger.warning(
+            "[%s] Último precio del ticker fuera de su horquilla (último %s, compra %s, venta %s): %s",
+            symbol, ticker.get("last"), ticker.get("bid"), ticker.get("ask"), used,
+        )
 
     def _build_client(self):
         import ccxt  # import perezoso: el resto del código no depende de ccxt
@@ -230,19 +268,22 @@ class Exchange:
     def fetch_last_price(self, symbol: str) -> float:
         """Último precio. Una recién listada puede no tener 'last' aún (sin trades):
         cae a close/bid/ask y, si tampoco hay, lanza ValueError limpio (no TypeError
-        por float(None))."""
+        por float(None)). Si el último precio no cuadra con el libro del propio ticker
+        (ver `ticker_price`), devuelve el punto medio del libro."""
         symbol = self._normalize_symbol(symbol)
         ticker = self._client.fetch_ticker(symbol)
-        price = (ticker.get("last") or ticker.get("close")
-                 or ticker.get("bid") or ticker.get("ask"))
+        price, trusted = ticker_price(ticker)
         if price is None:
             raise ValueError(f"{symbol}: sin precio disponible todavía (recién listada)")
-        return float(price)
+        if not trusted:
+            self._warn_suspect(symbol, ticker, "uso el punto medio del libro")
+        return price
 
     def fetch_last_prices(self, symbols: list[str]) -> dict[str, float]:
         """Últimos precios de varios símbolos en UNA consulta (sondeo rápido de salidas).
         Sin reintentos: si falla, el llamador se salta ese sondeo. Los símbolos sin
-        precio se omiten del resultado."""
+        precio, o con un último precio que no cuadra con el libro del propio ticker
+        (ver `ticker_price`), se omiten del resultado: con ese dato se deciden ventas."""
         if not symbols:
             return {}
         wanted = {self._normalize_symbol(s): s for s in symbols}
@@ -250,11 +291,24 @@ class Exchange:
         prices: dict[str, float] = {}
         for normalized, original in wanted.items():
             ticker = tickers.get(normalized) or {}
-            price = (ticker.get("last") or ticker.get("close")
-                     or ticker.get("bid") or ticker.get("ask"))
+            price, trusted = ticker_price(ticker)
+            if not trusted:
+                self._warn_suspect(original, ticker, "me salto esta moneda en este sondeo")
+                continue
             if price:
-                prices[original] = float(price)
+                prices[original] = price
         return prices
+
+    def fetch_book_price(self, symbol: str, side: str) -> float:
+        """Precio al que se ejecutaría YA una orden a mercado: la mejor compra del libro
+        si se va a vender (`side='sell'`), la mejor venta si se va a comprar. Viene del
+        libro de órdenes, no de un ticker, así que sirve de segunda lectura independiente
+        antes de vender. Sin reintentos: quien llama decide qué hacer si falla."""
+        book = self._client.fetch_order_book(self._normalize_symbol(symbol), 20)
+        levels = book.get("bids" if side == "sell" else "asks") or []
+        if not levels:
+            raise ValueError(f"{symbol}: libro de órdenes vacío")
+        return float(levels[0][0])
 
     @with_network_retry
     def fetch_balance(self, currency: str) -> float:
@@ -429,5 +483,6 @@ class Exchange:
 __all__ = [
     "Exchange",
     "OHLCV_COLUMNS",
+    "ticker_price",
     "with_network_retry",
 ]

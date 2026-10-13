@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-13 | Ventas por Precios que no Existieron: Filtro de Tickers y Confirmación con el Libro](#2026-10-13--ventas-por-precios-que-no-existieron-filtro-de-tickers-y-confirmación-con-el-libro)
 * [2026-10-12 | Stops de Emergencia en el Exchange (Apagados por Defecto)](#2026-10-12--stops-de-emergencia-en-el-exchange-apagados-por-defecto)
 * [2026-10-11 | Pausa Manual por Cabeza y Grid al 6% por Operación](#2026-10-11--pausa-manual-por-cabeza-y-grid-al-6-por-operación)
 * [2026-10-10 | Rechazos 429 de KuCoin: Reintento y Sondeo Rápido que no se Detiene](#2026-10-10--rechazos-429-de-kucoin-reintento-y-sondeo-rápido-que-no-se-detiene)
@@ -21,6 +22,24 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-13 | Ventas por Precios que no Existieron: Filtro de Tickers y Confirmación con el Libro
+
+* **Archivos Afectados:** [`src/tradebot/exchange.py`](../src/tradebot/exchange.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/exchange_stops.py`](../src/tradebot/exchange_stops.py), [`tests/test_price_guard.py`](../tests/test_price_guard.py)
+* **Qué pasó (13-oct, en real):** `volumen_explosivo` vendió la mitad de ADA (09:31:21 UTC) y de AVAX (11:20:18 UTC) como «toma parcial», que exige precio ≥ entrada +5% (ADA ≥ 0,2489; AVAX ≥ 10,986). El mercado estaba en 0,2351 y 10,16, y las velas de 1 minuto de KuCoin no muestran ningún pico: ADA no tocaba 0,2489 desde el día anterior a las 13:07, antes de abrir la posición. Minutos antes el stop de arrastre de ambas ya había subido por un máximo también inexistente (ADA ≈ 0,2439; AVAX ≈ 10,915). Tras la parcial el stop pasa a la entrada, que quedaba por encima del mercado, y el sondeo siguiente vendió el resto.
+  * Resultado: ADA −3,19 USDT (parcial −1,53, resto −1,66) y AVAX ≈ −7,5 USDT. Frente a no haber vendido, 1–2 USDT, porque ambas siguieron por debajo de la entrada.
+  * Las estadísticas de deslizamiento de stops recogen estas dos ventas como −0,93% y −2,81%. **No son deslizamiento:** el «nivel» era la entrada, ya por encima del mercado. Ninguna orden de stop del exchange se ha disparado todavía.
+* **Causa probable (comprobada en la librería, no demostrada en el momento del fallo):** por la hora, la primera lectura errónea llegó en el sondeo rápido (`fetch_tickers`). Si KuCoin manda un ticker sin `last`, `ccxt` no devuelve «sin dato»: lo deduce como `averagePrice + changePrice / 2`, suponiendo que la media es la de apertura y cierre. En KuCoin es el precio medio del día anterior. Con un ticker real de ADA sin `last`, ccxt 4.5.70 (la del VPS) devuelve 0,2315 con el mercado en 0,2350. En un día de caída el valor queda por encima del mercado (lo ocurrido); en uno de subida quedaría por debajo y haría saltar stops. Tres de las cuatro lecturas erróneas encajan con esa fórmula (la de ADA, exacta); la primera de AVAX no cuadra del todo. En 40 muestras seguidas del listado de KuCoin no apareció ningún ticker sin `last`. El bot no anotaba el precio que veía, así que el log no permitía confirmarlo.
+* **Cambios Implementados:**
+  1. **Filtro de tickers (`exchange.ticker_price`):** el último precio solo se usa si está dentro de la horquilla de compra y venta del propio ticker, con un 1% de margen (esos dos campos vienen tal cual del exchange). Si no, en el sondeo rápido esa moneda se salta y en la consulta individual se devuelve el punto medio del libro. Queda un aviso en el log, como mucho uno cada 5 minutos por moneda.
+  2. **Confirmación antes de vender (`Engine._exit_confirmed`, solo en real):** antes de un stop, un objetivo o una toma parcial se lee el libro de órdenes (`Exchange.fetch_book_price`). Un stop se ejecuta salvo que la mejor compra esté más de un 1% por encima del precio que lo disparó; un objetivo o una parcial, solo si no está más de un 1% por debajo. Si no se confirma, no se vende y **el stop de arrastre vuelve a donde estaba**. Si la lectura falla, el stop se ejecuta igualmente y el resto espera al siguiente sondeo.
+  3. **Precio de disparo en el log:** cada salida anota el precio visto y el del libro.
+  4. **Aviso por Telegram** (como mucho uno por hora) si una posición lleva 15 minutos sin poder poner su stop de emergencia. El 13-oct KuCoin rechazó crear órdenes de stop de 11:20 a 15:28 UTC (`123002 ULTRA-OPEN-SERVICE ERROR`) y NEAR estuvo tres horas y media sin la suya sin que llegara ningún aviso.
+* **Coste:** una consulta más por venta, unos 0,26 s medidos. En una caída real muy rápida el stop sale ese tiempo más tarde.
+* **Lo que no cubre:** si un precio falso llegara por el cierre de la última vela (ciclo de 60 s) y solo subiera el stop de arrastre, sin provocar venta, ese stop quedaría subido. Las velas vienen tal cual del exchange y no se ha visto que fallen; el cambio 3 permitirá detectarlo.
+* **Verificación:** 342 tests pasando (18 nuevos en `tests/test_price_guard.py`, incluido el ticker sin `last` pasado por el analizador real de ccxt). Con datos reales de KuCoin, 30 muestras de las 18 monedas: ningún ticker descartado y el último precio nunca a más del 0,22% de la horquilla.
 
 ---
 

@@ -30,6 +30,12 @@ logger = logging.getLogger(__name__)
 STRIKE_EXIT_REASONS = ("stop-loss", "trailing-stop")
 
 
+# Antes de vender, el libro de órdenes debe estar como mucho a esto del precio que disparó la salida.
+EXIT_CONFIRM_TOLERANCE = 0.01
+UNPROTECTED_ALERT_SECONDS = 900.0     # avisar si una posición lleva este tiempo sin stop en el exchange
+URGENT_EXITS = ("stop-loss", "trailing-stop")
+
+
 class Engine:
     def __init__(
         self,
@@ -62,6 +68,7 @@ class Engine:
         self.closed_trades: list[ClosedTrade] = []
         self._unconfirmed: list[dict] = []   # ejecuciones con datos estimados, por confirmar
         self._orphan_alert_at = 0.0          # último aviso de órdenes huérfanas no cancelables
+        self._unprotected_alert_at = 0.0     # último aviso de posiciones sin stop en el exchange
         from .exchange_stops import StopGuard
         eng = getattr(config, "engine", None)
         stops_on = (getattr(config, "mode", "") == "live" and exchange is not None
@@ -246,7 +253,15 @@ class Engine:
                 still_open.append(pos)
                 continue
             # 2) Salida por TP / SL / trailing / partial-TP (evaluate_exit muta trailing/peak).
+            before = (pos.stop_loss, pos.peak_price)
             decision = self.risk.evaluate_exit(pos, current_price, current_atr=current_atr)
+            if decision.order is not None and not self._exit_confirmed(pos, decision.order):
+                # El precio que pedía vender no se sostiene en el libro: tampoco vale para
+                # arrastrar el stop. Se deja todo como estaba y se vuelve a mirar en el siguiente sondeo.
+                pos.stop_loss, pos.peak_price = before
+                self.storage.update_open_position(pos)
+                still_open.append(pos)
+                continue
             if decision.order is not None:
                 if decision.order.reason == "partial-take-profit":
                     executed = self._stop_already_executed(pos)
@@ -263,6 +278,42 @@ class Engine:
             self._sync_stop(pos)                     # el stop del exchange sigue al del bot
             still_open.append(pos)
         self.positions = still_open
+
+    def _exit_confirmed(self, pos: Position, order: Order) -> bool:
+        """Segunda lectura antes de vender (solo en real): el libro de órdenes debe
+        respaldar el precio que disparó la salida. Un precio de ticker o de vela que no
+        existió en el mercado no debe provocar una venta.
+          - stop: se vende salvo que el libro esté claramente POR ENCIMA de ese precio;
+          - objetivo o toma parcial: se vende solo si el libro NO está claramente por debajo.
+        Si la lectura falla, un stop se ejecuta igualmente (lo urgente es salir) y el
+        resto espera al siguiente sondeo."""
+        urgent = order.reason in URGENT_EXITS
+        if order.reason not in URGENT_EXITS + ("take-profit", "partial-take-profit"):
+            return True
+        fetch = getattr(self.exchange, "fetch_book_price", None)
+        if self.config.mode != "live" or not callable(fetch):
+            return True
+        try:
+            book = float(fetch(pos.symbol, order.side.value))
+        except Exception as exc:
+            logger.warning("[%s] No pude confirmar en el libro la salida %s de %s (precio visto %.6f): %s; %s",
+                           pos.category, order.reason, pos.symbol, order.price, exc,
+                           "vendo igualmente" if urgent else "espero al siguiente sondeo")
+            return urgent
+        selling = order.side is Side.SELL
+        price_fell = urgent if selling else not urgent        # ¿la salida la provoca una caída del precio?
+        if price_fell:
+            confirmed = book <= order.price * (1 + EXIT_CONFIRM_TOLERANCE)
+        else:
+            confirmed = book >= order.price * (1 - EXIT_CONFIRM_TOLERANCE)
+        if confirmed:
+            logger.info("[%s] salida %s de %s: precio visto %.6f, libro %.6f",
+                        pos.category, order.reason, pos.symbol, order.price, book)
+        else:
+            logger.warning("[%s] Salida %s de %s NO confirmada: precio visto %.6f pero el libro está en %.6f "
+                           "(%+.2f%%); no vendo y vuelvo a mirar en el siguiente sondeo",
+                           pos.category, order.reason, pos.symbol, order.price, book, (book / order.price - 1) * 100)
+        return confirmed
 
     def update_head_symbols(self, category: str, new_symbols: list[str]) -> None:
         """Actualiza los símbolos de una cabeza (p.ej. tras selección RS), creando
@@ -797,6 +848,7 @@ class Engine:
         guard = self.stop_guard
         if not guard.enabled:
             return
+        self._alert_unprotected()                     # antes del listado: si el exchange falla, que avise igual
         open_orders = guard.open_orders()
         if open_orders is None:
             return                                    # sin listado fiable no se toca nada
@@ -827,6 +879,25 @@ class Engine:
                 )
         for pos in self.positions:
             self._sync_stop(pos)
+
+    def _alert_unprotected(self) -> None:
+        """Avisa (como mucho una vez por hora) si el exchange lleva un rato rechazando la
+        orden de emergencia de alguna posición: mientras dure, solo la protege el stop del bot."""
+        pending = self.stop_guard.unprotected(self.positions, UNPROTECTED_ALERT_SECONDS)
+        if not pending:
+            return
+        now = self._now().timestamp()
+        if now - self._unprotected_alert_at <= 3600:
+            return
+        self._unprotected_alert_at = now
+        lines = [f"{symbol}: {seconds / 60:.0f} min ({error[:120]})" for symbol, seconds, error in pending]
+        logger.error("Posiciones sin stop de emergencia en el exchange: %s", "; ".join(lines))
+        self.notifier.notify(
+            "⚠️ <b>Posiciones sin stop de emergencia en el exchange</b>\n"
+            + "\n".join(lines)
+            + "\nEl exchange rechaza crear la orden; el bot lo reintenta cada 5 min. "
+            "Mientras tanto solo las protege el stop del bot: si el bot o el servidor se caen, quedan sin stop."
+        )
 
     def release_exchange_stops(self) -> int:
         """Con la opción desactivada: retira las órdenes de stop que hubiera dejado el bot."""
