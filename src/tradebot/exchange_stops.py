@@ -41,6 +41,7 @@ class StopGuard:
         self.enabled = bool(enabled and exchange is not None)
         self._created: dict[str, float] = {}       # id -> instante de creación (el listado puede ir con retraso)
         self._retry_after: dict[str, float] = {}   # símbolo -> no reintentar la creación antes de este instante
+        self._failing: dict[str, tuple[float, str]] = {}   # símbolo -> (primer fallo seguido, último error)
 
     # --- nivel deseado -------------------------------------------------------------
 
@@ -72,10 +73,13 @@ class StopGuard:
             order = self.exchange.create_stop_sell(pos.symbol, amount, price, CLIENT_PREFIX + uuid.uuid4().hex[:24])
         except Exception as exc:
             self._retry_after[pos.symbol] = time.monotonic() + RETRY_SECONDS
+            since = self._failing.get(pos.symbol, (time.monotonic(), ""))[0]
+            self._failing[pos.symbol] = (since, str(exc))
             logger.warning("[%s] No pude poner el stop de emergencia en el exchange (%s); sigue el stop del bot "
                            "y lo reintento en %d min", pos.symbol, exc, RETRY_SECONDS // 60)
             return False
         self._retry_after.pop(pos.symbol, None)
+        self._failing.pop(pos.symbol, None)
         old = pos.stop_order_id
         pos.stop_order_id = str(order["id"])
         pos.stop_order_price = float(order.get("trigger_price") or price)
@@ -86,6 +90,19 @@ class StopGuard:
         if old:                                   # la nueva ya protege: ahora se retira la anterior
             self._cancel(old, pos.symbol)
         return True
+
+    def unprotected(self, positions: list[Position], min_seconds: float) -> list[tuple[str, float, str]]:
+        """Posiciones que llevan al menos `min_seconds` sin orden de emergencia porque el
+        exchange rechaza crearla: [(símbolo, segundos, último error)]. Olvida los símbolos
+        que ya no tienen posición."""
+        if not self.enabled:
+            return []
+        waiting = {p.symbol for p in positions if not p.stop_order_id}
+        for symbol in [s for s in self._failing if s not in waiting]:
+            del self._failing[symbol]
+        now = time.monotonic()
+        return [(symbol, now - since, error) for symbol, (since, error) in self._failing.items()
+                if now - since >= min_seconds]
 
     def _sellable_amount(self, pos: Position) -> float:
         """Cantidad de la orden: nunca más de lo que hay de verdad en la cuenta. Si la
