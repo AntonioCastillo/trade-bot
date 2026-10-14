@@ -63,6 +63,14 @@ def main() -> None:
         step(f"velas de las señales: {source}", len(candles) > 50, f"{len(candles)} velas diarias")
     except Exception as exc:
         step(f"velas de las señales: {source}", False, f"{type(exc).__name__}: {exc}")
+    if exchange._fallback is not None:
+        name, client, fb_quote, _ = exchange._fallback
+        pair = f"{config.reference_symbol.split('/')[0]}/{fb_quote}"
+        try:
+            rows = client.fetch_ohlcv(pair, "1d", limit=config.lookback)
+            step(f"velas de respaldo: {name} ({pair})", len(rows) > 50, f"{len(rows)} velas diarias")
+        except Exception as exc:
+            step(f"velas de respaldo: {name} ({pair})", False, f"{type(exc).__name__}: {exc}")
     for symbol in config.symbols():
         if symbol not in available:
             continue

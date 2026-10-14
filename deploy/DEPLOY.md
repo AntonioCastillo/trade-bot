@@ -266,8 +266,18 @@ públicos) y operar en OKX: órdenes, saldos y precios de las salidas siguen sie
 
 ### El cambio
 Igual que en la sección 10 (pausar, cerrar posiciones, mover el saldo), con un PR que ponga en
-`config.yaml`: `exchange: myokx`, `data_exchange: binance`, `data_quote: USDT` y
-`engine.fee_pct` con la comisión que muestre `verify-account`.
+`config.yaml`: `exchange: myokx`, `engine.fee_pct` con la comisión que muestre
+`verify-account`, y la fuente de señales con su respaldo:
+```yaml
+data_exchange: kucoin            # principal: con la que se ajustó la configuración
+data_quote: USDT
+data_fallback_exchange: binance  # si KuCoin deja de responder
+data_fallback_quote: USDT
+```
+Si KuCoin falla 3 veces seguidas, las velas salen de Binance durante 30 minutos y luego se
+vuelve a probar KuCoin; llega un aviso por Telegram en cada cambio y el gist muestra la fuente
+activa (`data_source`). Cambiar de fuente cambia algunas señales (en `volumen_explosivo`,
+aproximadamente la mitad de las compras); las ventas no dependen de la fuente.
 
 **Simular antes:** `python scripts/livesim.py --combined --signal-exchange binance --signal-quote USDT`
 (con `--exchange myokx --quote USDC` para usar sus precios).

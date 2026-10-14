@@ -468,6 +468,7 @@ def run_forever(
         error_notify_interval_seconds=config.engine.error_notify_interval_seconds,
     )
     prev_halted = False
+    prev_source = getattr(engine.exchange, "active_data_source", None)
     last_closed: dict[str, object] = {}   # última vela CERRADA procesada por símbolo
     candles_cache: dict[str, object] = {}  # últimas velas por símbolo (ATR del sondeo rápido)
     exit_poll = config.engine.exit_poll_seconds
@@ -604,6 +605,17 @@ def run_forever(
                         "El bot deja de abrir posiciones hasta mañana."
                     )
                 prev_halted = engine.risk.halted
+
+                # Aviso si la fuente de las señales cambia (principal caída o recuperada).
+                source = getattr(engine.exchange, "active_data_source", None)
+                if isinstance(source, str) and isinstance(prev_source, str) and source != prev_source:
+                    back = source == getattr(engine.exchange, "primary_data_source", source)
+                    engine.notifier.notify(
+                        (f"✅ <b>Señales otra vez desde {source}</b>" if back else
+                         f"⚠️ <b>Señales desde {source}</b>: {prev_source} no responde.\n"
+                         "Cambian algunas señales (sobre todo las de volumen); las ventas no dependen de esto.")
+                    )
+                prev_source = source
 
                 # Señal de vida periódica a Telegram.
                 if scheduler.is_alive_due():

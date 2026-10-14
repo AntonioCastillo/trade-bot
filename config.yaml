@@ -11,6 +11,9 @@ exchange: bybiteu
 # siendo los de `exchange`. Pensado para operar donde el volumen es bajo (ver DEPLOY.md, 11).
 # data_exchange: binance
 # data_quote: USDT
+# Respaldo si la fuente principal deja de responder (vuelve a la principal cuando responde):
+# data_fallback_exchange: binance
+# data_fallback_quote: USDT
 
 timeframe: 4h          # por defecto 4h
 lookback: 300          # nº de velas a mantener para los indicadores

@@ -50,9 +50,10 @@ Este documento registra cronológicamente cada cambio significativo en el códig
   5. **`position_gone` mira el saldo total** (libre + bloqueado): si un exchange bloquea la moneda mientras vive la orden de stop, el libre sale 0 y la posición se habría dado por vendida.
   6. **Verificaciones contra otro exchange** con la misma configuración: `manage.py verify-account|verify-api|verify-stops --exchange myokx`.
   7. **`livesim.py --signal-exchange binance --signal-quote USDT`** (o `data_exchange` en la configuración): simula con las señales de otra fuente. Reproduce el resultado del estudio de octubre.
+  8. **Respaldo automático de la fuente** (`data_fallback_exchange`, `data_fallback_quote`), pedido por el operador: KuCoin como principal y Binance de respaldo. Si la principal falla 3 veces seguidas (no cuenta un par que no exista en ella), las velas salen del respaldo durante 30 minutos y después se vuelve a probar la principal. Cada llamada usa una sola fuente, así que una ventana de velas nunca mezcla exchanges. Aviso por Telegram en cada cambio y `data_source` en el gist. Si fallan las dos, ese ciclo no tiene velas: no hay entradas nuevas y las salidas siguen con los precios del exchange que opera.
 * **Estado:** preparado, sin activar. `config.yaml` sigue en Bybit EU sin fuente separada. Contra la API pública de OKX funcionan pares, precios, libro y velas; con Binance como fuente, las velas de NEAR/USDC salen de NEAR/USDT. **Sin probar:** todo lo que necesita claves de OKX (saldo, órdenes, comisión real y, sobre todo, sus órdenes de stop).
 * **Lectura:** con X-Perps (0,10%) y señales de Binance, ≈ +165% desde 2022 frente a ≈ +141% en Bybit EU al 0,25% (señales de KuCoin como sustituto de las suyas). Sin X-Perps (0,20%), OKX con señales de Binance (+139%) no mejora a Bybit EU.
-* **Verificación:** 380 tests pasando (16 nuevos en `tests/test_signal_source.py`).
+* **Verificación:** 388 tests pasando (16 nuevos en `tests/test_signal_source.py` y 8 en `tests/test_signal_failover.py`). Con datos reales: con KuCoin respondiendo, las velas de NEAR/USDC salen de NEAR/USDT en KuCoin; simulando su caída, al tercer fallo salen de Binance.
 
 ---
 

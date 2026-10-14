@@ -211,6 +211,10 @@ class Config:
     # los de `exchange`.
     data_exchange: str = ""
     data_quote: str = ""
+    # Respaldo de la fuente de señales: si la principal deja de responder, las velas salen
+    # de aquí hasta que vuelva (p. ej. principal kucoin, respaldo binance).
+    data_fallback_exchange: str = ""
+    data_fallback_quote: str = ""
 
     @property
     def signals_elsewhere(self) -> bool:
@@ -417,6 +421,8 @@ def load_config(path: str | Path = "config.yaml", require_credentials: bool = Tr
         credentials=credentials,
         data_exchange=str(raw.get("data_exchange") or ""),
         data_quote=str(raw.get("data_quote") or ""),
+        data_fallback_exchange=str(raw.get("data_fallback_exchange") or ""),
+        data_fallback_quote=str(raw.get("data_fallback_quote") or ""),
     )
     cfg.validate(require_credentials)
     return cfg
