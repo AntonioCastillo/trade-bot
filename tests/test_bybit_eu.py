@@ -88,30 +88,19 @@ def test_symbols_in_another_quote_currency_are_rejected(tmp_path, monkeypatch):
         _load(tmp_path, monkeypatch, symbol="NEAR/USDT")          # config a medio migrar
 
 
-def test_bybit_config_mirrors_the_live_one(monkeypatch):
-    """config.bybiteu.yaml debe ser config.yaml cambiando solo exchange, moneda y ETC."""
+def test_live_config_runs_on_bybit_eu(monkeypatch):
+    """config.yaml opera en Bybit EU desde la migración: USDC, sin ETC, su comisión y sus stops."""
     monkeypatch.setattr("tradebot.config.load_dotenv", lambda *a, **k: None)
     for name in ENV:
         monkeypatch.setenv(name, "x")
-    kucoin, bybit = load_config("config.yaml"), load_config("config.bybiteu.yaml")
+    config = load_config("config.yaml")
 
-    def heads(config):
-        out = {}
-        for ins in config.instruments:
-            fields = asdict(ins)
-            base = fields.pop("symbol").split("/")[0]
-            out[(ins.category, base)] = fields
-        return out
-
-    expected = {k: v for k, v in heads(kucoin).items() if k[1] != "ETC"}
-    assert heads(bybit) == expected
-    assert all(s.endswith("/USDC") for s in bybit.symbols())
-    assert asdict(bybit.risk) == dict(asdict(kucoin.risk), quote_currency="USDC")
-    differ = dict(exchange_stops=None, fee_pct=None)                 # se activan y se miden por exchange
-    assert dict(asdict(bybit.engine), **differ) == dict(asdict(kucoin.engine), **differ)
-    assert (kucoin.engine.fee_pct, bybit.engine.fee_pct) == (0.001, 0.0025)
-    assert (bybit.exchange, bybit.timeframe, bybit.lookback) == ("bybiteu", kucoin.timeframe, kucoin.lookback)
-    assert bybit.disabled_heads == kucoin.disabled_heads
+    assert (config.mode, config.exchange, config.risk.quote_currency) == ("live", "bybiteu", "USDC")
+    assert config.symbols() and all(s.endswith("/USDC") for s in config.symbols())
+    assert not any(s.startswith("ETC/") for s in config.symbols())
+    assert (config.engine.fee_pct, config.engine.exchange_stops) == (0.0025, True)
+    assert config.carry.funding_radar_enabled is False             # el radar mira los futuros de KuCoin
+    assert config.credentials.is_complete and config.credentials.api_passphrase == ""
 
 
 # --- cliente de ccxt ----------------------------------------------------------------------------

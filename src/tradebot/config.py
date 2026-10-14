@@ -216,12 +216,12 @@ class Config:
         y verificación de la API."""
         return f"BTC/{self.risk.quote_currency}"
 
-    def validate(self) -> None:
+    def validate(self, require_credentials: bool = True) -> None:
         if self.mode not in ("paper", "live"):
             raise ValueError(f"mode inválido: {self.mode!r} (usa 'paper' o 'live')")
         if self.exchange not in EXCHANGES:
             raise ValueError(f"exchange no admitido: {self.exchange!r} (usa {', '.join(EXCHANGES)})")
-        if self.mode == "live" and not self.credentials.is_complete:
+        if require_credentials and self.mode == "live" and not self.credentials.is_complete:
             raise ValueError(f"mode=live requiere {', '.join(credential_env_names(self.exchange))} en el .env")
         # Un símbolo en otra moneda de cotización operaría contra un saldo que el bot no mira.
         quote = self.risk.quote_currency
@@ -345,8 +345,10 @@ def credential_env_names(exchange: str) -> list[str]:
     return names + [f"{meta['env']}_API_PASSPHRASE"] if meta["passphrase"] else names
 
 
-def load_config(path: str | Path = "config.yaml") -> Config:
-    """Lee config.yaml, mezcla los secretos del .env y valida el resultado."""
+def load_config(path: str | Path = "config.yaml", require_credentials: bool = True) -> Config:
+    """Lee config.yaml, mezcla los secretos del .env y valida el resultado.
+    `require_credentials=False` para herramientas que no operan (simulaciones, análisis,
+    verificaciones que ya avisan si faltan claves): cargan la configuración real sin claves."""
     load_dotenv()
 
     raw: dict[str, Any] = {}
@@ -393,5 +395,5 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         log_level=(raw.get("logging") or {}).get("level", "INFO"),
         credentials=credentials,
     )
-    cfg.validate()
+    cfg.validate(require_credentials)
     return cfg

@@ -30,7 +30,7 @@ HORIZONS = (1, 3, 5, 10)
 
 
 def main() -> None:
-    config = load_config()
+    config = load_config(require_credentials=False)
     timeframe = sys.argv[1] if len(sys.argv) > 1 else config.timeframe
     limit = int(sys.argv[2]) if len(sys.argv) > 2 else 5000
     setup_logging("WARNING")

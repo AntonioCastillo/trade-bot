@@ -5,7 +5,7 @@ orden. Después vienen `verify-api` (compra y venta real de ~1) y `verify-stops`
 
 Uso:
     python scripts/verify_account.py                              # config.yaml
-    python scripts/verify_account.py --config config.bybiteu.yaml
+    python scripts/verify_account.py --config otra_config.yaml
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml", help="Fichero de configuración (def: config.yaml)")
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    config = load_config(args.config, require_credentials=False)
     quote = config.risk.quote_currency
     exchange = Exchange(config)
     ok = True

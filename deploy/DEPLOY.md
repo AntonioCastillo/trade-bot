@@ -187,77 +187,55 @@ despliega como cualquier otro.
 > real con KuCoin. Protege la cuenta de GitHub con 2FA: quien pueda escribir en `main`
 > puede ejecutar código en el VPS con las claves del exchange.
 
-## 10. Migración a Bybit EU
+## 10. Exchange: Bybit EU (migración desde KuCoin, octubre de 2026)
 
 KuCoin global no tiene autorización para dar servicio en España desde el fin del periodo
-transitorio de MiCA (1 de julio de 2026) y puede restringir la cuenta sin aviso. El bot
-admite `exchange: bybiteu`; lo que opera en real sigue siendo `config.yaml` (KuCoin) hasta
-el último paso. `config.bybiteu.yaml` es la misma configuración con USDC en vez de USDT y
-sin ETC, que Bybit EU no cotiza contra USDC.
+transitorio de MiCA (1 de julio de 2026) y puede restringir la cuenta sin aviso. Desde la
+migración, `config.yaml` opera en Bybit EU: USDC en vez de USDT, sin ETC (no cotiza contra
+USDC) y con la comisión real de la cuenta (0,25%). Claves en `.env`: `BYBIT_API_KEY` y
+`BYBIT_API_SECRET`, de una clave sin permiso de retirada y limitada a la IP del VPS.
 
-**Lo que no está probado:** todo lo que necesita claves (saldo, órdenes, comisiones, stops).
-Solo se ha comprobado la parte pública (pares, velas, precios, un ciclo en simulado). Por
-eso los pasos A van antes de mover dinero.
-
-### A. Comprobar la cuenta (el bot real sigue en KuCoin, sin tocarlo)
-1. En Bybit EU, crea una clave de API con permiso de **lectura y trading al contado, sin
-   retirada**, y limítala a la IP del VPS.
-2. Añade al `.env` del VPS (sin quitar las de KuCoin):
-   ```bash
-   sudo -u tradebot nano /opt/tradebot/.env    # BYBIT_API_KEY=...  y  BYBIT_API_SECRET=...
-   ```
-3. Cuenta, saldo y comisión, **sin operar**:
-   ```bash
-   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-account --config config.bybiteu.yaml
-   ```
-   La comisión debe coincidir con `engine.fee_pct` de `config.bybiteu.yaml`. La cuenta
-   paga un 0,25% en los 17 pares, a mercado y con orden limitada (comprobado el
-   2026-10-14); con esa comisión la simulación desde 2022 da +119%, frente a +161% al 0,10%.
-4. Con unos 20 USDC en la cuenta, compra y venta **real** de 5 USDC (pide confirmación):
-   ```bash
-   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-api --usd 5 --config config.bybiteu.yaml
-   ```
-5. Órdenes de stop (pone una orden mínima con el disparo un 50% por debajo y la cancela):
-   ```bash
-   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-stops --config config.bybiteu.yaml
-   ```
-   Si Bybit interpretara mal la orden y la disparase al momento, vendería esa cantidad
-   mínima de ETH si la hubiera en la cuenta; el script lo detectaría en el paso del listado.
-
-Si algo falla, no sigas: hay que corregir el código antes.
-
-### B. Simulado en paralelo (opcional)
-En **otra carpeta** (el simulado escribiría los mismos ficheros de estado que el bot real):
+### Verificaciones (hechas el 2026-10-14 con la cuenta real)
+Sin operar (`verify-account`), compra y venta real de 5 USDC (`verify-api`) y órdenes de stop
+(`verify-stops`, siete de siete). Para repetirlas, por ejemplo con claves nuevas:
 ```bash
-git clone https://github.com/AntonioCastillo/trade-bot.git ~/tradebot-bybit && cd ~/tradebot-bybit
-python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python scripts/run.py config.bybiteu.yaml      # sin TRADEBOT_LIVE_CONFIRM arranca en simulado
+cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-account
+```
+```bash
+cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-api --usd 5
+```
+```bash
+cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-stops
 ```
 
-### C. El cambio
-1. Pausa las cuatro cabezas en KuCoin y espera a que las posiciones abiertas se cierren solas:
+### El cambio
+1. Pausar las cuatro cabezas en KuCoin y esperar a que las posiciones abiertas se cierren solas
+   (hecho el 2026-10-14):
    ```bash
    cd /opt/tradebot && for h in tendencia_alcista volumen_explosivo grid_lateral capitulacion; do sudo -u tradebot .venv/bin/python scripts/manage.py pause $h; done
    ```
-2. Sin posiciones abiertas, mueve el saldo a Bybit EU en USDC. Eso lo haces tú.
-3. PR que sustituye `config.yaml` por el contenido de `config.bybiteu.yaml` (con
-   `mode: live`, y `exchange_stops: true` si el paso A.5 salió bien) y borra
-   `config.bybiteu.yaml`. Al fusionarlo, el despliegue automático reinicia el bot en Bybit EU.
-4. Levanta las pausas (se guardan en la base de datos y sobreviven al cambio):
+2. Sin posiciones abiertas, mover el saldo a Bybit EU en USDC (lo hace el operador).
+3. Si el saldo que llega es claramente menor que el máximo histórico de equity del bot,
+   borrarlo antes del paso 4, o el disyuntor global (15%) lo cerraría todo al arrancar:
+   ```bash
+   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/reset_ath.py
+   ```
+4. Fusionar el PR que pone `config.yaml` en Bybit EU. El despliegue automático reinicia el bot.
+5. Comprobar el arranque: el log debe decir `Stops de emergencia en el exchange ACTIVOS` y el
+   gist `"exchange": "bybiteu"` y `"quote": "USDC"`.
+6. Levantar las pausas (viven en la base de datos y sobreviven al cambio):
    ```bash
    cd /opt/tradebot && for h in tendencia_alcista volumen_explosivo grid_lateral capitulacion; do sudo -u tradebot .venv/bin/python scripts/manage.py resume $h; done
    ```
-5. Si el saldo que llega a Bybit es menor que el máximo histórico de equity del bot, bórralo
-   antes del paso 3 (`sudo -u tradebot .venv/bin/python scripts/reset_ath.py`): el
-   disyuntor global cierra todo si el equity cae un 15% desde ese máximo.
 
 **Protección:** si al arrancar en Bybit quedan posiciones registradas en USDT, el bot **no
 arranca** (reconciliarlas contra la cuenta nueva las daría por vendidas) y el despliegue
 automático vuelve a la versión anterior. Mientras tanto llegarán varios avisos de «Bot CAÍDO».
 
-**Incógnita que no resuelve la migración:** `volumen_explosivo` se dispara con el volumen
-de cada exchange. En Bybit EU, de enero a octubre de 2026, solo 14 de sus 44 entradas
-coincidieron con las de KuCoin; el resultado fue parecido, pero son nueve meses.
+**Volver a KuCoin:** revertir ese PR, con las posiciones de Bybit cerradas y el saldo de vuelta.
+
+**Simulaciones:** `scripts/livesim.py` usa las velas del exchange de `config.yaml`, que en
+Bybit EU solo llegan a octubre de 2025. Para estudios largos: `--exchange kucoin --quote USDT`.
 
 ## Notas
 - **Firewall:** no requiere puertos entrantes; solo HTTPS saliente (por defecto OK).

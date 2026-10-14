@@ -9,7 +9,7 @@ cambiar de exchange: cada uno tiene sus propias llamadas.
 Uso (en el VPS, con las claves del bot):
     python scripts/verify_stops.py                  # usa ETH contra la moneda de cotización
     python scripts/verify_stops.py --symbol DOGE/USDT
-    python scripts/verify_stops.py --config config.bybiteu.yaml
+    python scripts/verify_stops.py --config otra_config.yaml
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml", help="Fichero de configuración (def: config.yaml)")
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    config = load_config(args.config, require_credentials=False)
     if not config.credentials.is_complete:
         print(f"Faltan las claves de {config.exchange_name} en .env ({', '.join(credential_env_names(config.exchange))})")
         sys.exit(1)

@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-14 | El Bot Pasa a Operar en Bybit EU](#2026-10-14--el-bot-pasa-a-operar-en-bybit-eu)
 * [2026-10-14 | Bybit EU: la Cuenta Paga un 0,25% de Comisión](#2026-10-14--bybit-eu-la-cuenta-paga-un-025-de-comisión)
 * [2026-10-13 | Ventas por Precios que no Existieron: Filtro de Tickers y Confirmación con el Libro](#2026-10-13--ventas-por-precios-que-no-existieron-filtro-de-tickers-y-confirmación-con-el-libro)
 * [2026-10-13 | Exchange Configurable: Soporte de Bybit EU para Migrar desde KuCoin](#2026-10-13--exchange-configurable-soporte-de-bybit-eu-para-migrar-desde-kucoin)
@@ -24,6 +25,19 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-14 | El Bot Pasa a Operar en Bybit EU
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml), `config.bybiteu.yaml` (eliminado), [`src/tradebot/config.py`](../src/tradebot/config.py), [`scripts/livesim.py`](../scripts/livesim.py), scripts de verificación y simulación, [`tests/test_bybit_eu.py`](../tests/test_bybit_eu.py), [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)
+* **Motivo:** KuCoin global no puede dar servicio en España desde el fin del transitorio de MiCA. Bybit EU quedó verificado el 2026-10-14 con la cuenta real: `verify-account`, `verify-api` (compra y venta de 5 USDC) y `verify-stops` (siete de siete). Su comisión es 0,25% (+119% simulado desde 2022, frente a +161% en KuCoin al 0,10%).
+* **Cambios Implementados:**
+  1. `config.yaml` pasa a ser la configuración de Bybit EU, en real y con los stops de emergencia del exchange activos. Desaparece `config.bybiteu.yaml`.
+  2. `load_config(..., require_credentials=False)` para las herramientas que no operan (simulaciones, análisis y verificaciones, que ya avisan si faltan claves): pueden cargar la configuración real sin las claves del exchange. El bot en real sigue exigiéndolas.
+  3. `livesim.py --exchange kucoin --quote USDT`: simular con las velas de otro exchange, necesario para estudios largos porque Bybit EU solo tiene historia desde octubre de 2025.
+* **Cuándo se fusiona:** con las posiciones de KuCoin cerradas y el saldo en Bybit EU. Si quedaran posiciones en USDT, el bot no arranca y el despliegue vuelve atrás solo. Pasos en `deploy/DEPLOY.md`, sección 10.
+* **Verificación:** 364 tests pasando.
 
 ---
 

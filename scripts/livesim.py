@@ -27,6 +27,7 @@ Las velas se cachean en data/livesim/ (primera ejecución: varios minutos).
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import hashlib
 import pickle
 import sys
@@ -501,10 +502,16 @@ def main() -> None:
     parser.add_argument("--combined", action="store_true",
                         help="Simula todas las cabezas JUNTAS, compitiendo por el saldo libre y los topes")
     parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--exchange", default=None,
+                        help="Simular con las velas de otro exchange (def: el de la configuración), p. ej. kucoin")
+    parser.add_argument("--quote", default=None, help="Moneda de cotización de esas velas (p. ej. USDT con kucoin)")
     args = parser.parse_args()
 
-    config = load_config(args.config)
-    use_exchange(config.exchange, config.risk.quote_currency)
+    config = load_config(args.config, require_credentials=False)
+    quote = args.quote or config.risk.quote_currency
+    use_exchange(args.exchange or config.exchange, quote)
+    if quote != config.risk.quote_currency:
+        config.instruments = [replace(i, symbol=f"{i.symbol.split('/')[0]}/{quote}") for i in config.instruments]
     start = pd.Timestamp(args.start, tz="UTC")
     heads = fixed_heads(config)
     if args.head:
