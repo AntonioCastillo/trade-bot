@@ -107,7 +107,9 @@ def test_bybit_config_mirrors_the_live_one(monkeypatch):
     assert heads(bybit) == expected
     assert all(s.endswith("/USDC") for s in bybit.symbols())
     assert asdict(bybit.risk) == dict(asdict(kucoin.risk), quote_currency="USDC")
-    assert dict(asdict(bybit.engine), exchange_stops=None) == dict(asdict(kucoin.engine), exchange_stops=None)
+    differ = dict(exchange_stops=None, fee_pct=None)                 # se activan y se miden por exchange
+    assert dict(asdict(bybit.engine), **differ) == dict(asdict(kucoin.engine), **differ)
+    assert (kucoin.engine.fee_pct, bybit.engine.fee_pct) == (0.001, 0.0025)
     assert (bybit.exchange, bybit.timeframe, bybit.lookback) == ("bybiteu", kucoin.timeframe, kucoin.lookback)
     assert bybit.disabled_heads == kucoin.disabled_heads
 

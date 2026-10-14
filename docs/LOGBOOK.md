@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-14 | Bybit EU: la Cuenta Paga un 0,25% de Comisión](#2026-10-14--bybit-eu-la-cuenta-paga-un-025-de-comisión)
 * [2026-10-13 | Ventas por Precios que no Existieron: Filtro de Tickers y Confirmación con el Libro](#2026-10-13--ventas-por-precios-que-no-existieron-filtro-de-tickers-y-confirmación-con-el-libro)
 * [2026-10-13 | Exchange Configurable: Soporte de Bybit EU para Migrar desde KuCoin](#2026-10-13--exchange-configurable-soporte-de-bybit-eu-para-migrar-desde-kucoin)
 * [2026-10-12 | Stops de Emergencia en el Exchange (Apagados por Defecto)](#2026-10-12--stops-de-emergencia-en-el-exchange-apagados-por-defecto)
@@ -23,6 +24,15 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-14 | Bybit EU: la Cuenta Paga un 0,25% de Comisión
+
+* **Archivos Afectados:** [`config.bybiteu.yaml`](../config.bybiteu.yaml), [`tests/test_bybit_eu.py`](../tests/test_bybit_eu.py), [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)
+* **Qué se vio:** `manage.py verify-account --config config.bybiteu.yaml` en el VPS, con las claves de la cuenta real: todo correcto salvo la comisión, **0,25% a mercado y 0,25% con orden limitada en los 17 pares**. Es el dato de la propia cuenta, no el 0,10% que daban la API pública y las guías. El operador es VIP 0 en KuCoin, así que el programa de Bybit para subir de nivel a quien ya es VIP en otro exchange no le aplica.
+* **Efecto simulado** (todas las cabezas, cambiando solo la comisión): desde 2022, +119% (caída máx. 14,5%) frente a +161% al 0,10%; con las velas de Bybit EU de enero a octubre de 2026, +10,2% frente a +13,2%. La que más pierde es `volumen_explosivo` (+75 → +47 puntos), la que más opera. Kraken en su tramo (0,60%) daba +47%: Bybit EU sigue siendo la mejor opción comprobada.
+* **Cambio:** `engine.fee_pct: 0.0025` en `config.bybiteu.yaml`, para que `verify-account` compare con la comisión real y las simulaciones y el modo simulado usen ese coste. En real el bot anota la comisión que cobra el exchange; este valor no cambia lo que paga. `config.yaml` (KuCoin) sigue en 0,10%.
 
 ---
 
