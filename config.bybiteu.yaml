@@ -1,6 +1,7 @@
 # Configuración del bot para BYBIT EU (migración desde KuCoin, octubre de 2026).
-# Es config.yaml con tres cambios: el exchange, la moneda de cotización (USDC en vez
-# de USDT) y sin ETC, que Bybit EU no cotiza contra USDC. El resto debe ser idéntico:
+# Es config.yaml con cuatro cambios: el exchange, la moneda de cotización (USDC en vez
+# de USDT), sin ETC, que Bybit EU no cotiza contra USDC, y la comisión de la cuenta
+# (0,25% en lugar del 0,10% de KuCoin). El resto debe ser idéntico:
 # lo vigila tests/test_bybit_eu.py. Las claves van en .env como BYBIT_API_KEY y
 # BYBIT_API_SECRET. Pasos de la migración: deploy/DEPLOY.md, sección 10.
 
@@ -143,7 +144,7 @@ engine:
   exchange_stops: false
   exchange_stop_buffer_pct: 0.02      # disparo un 2% por debajo del stop del bot
   exchange_stop_min_move_pct: 0.005   # se repone cuando el stop del bot sube al menos un 0,5%
-  fee_pct: 0.0010              # comisión spot estándar (0.1%)
+  fee_pct: 0.0025              # comisión real de la cuenta en Bybit EU (verify-account, 2026-10-14)
   slippage_pct: 0.0005          # deslizamiento estimado
   report_interval_seconds: 900  # informe cada 15 min
   alive_interval_seconds: 21600 # señal de vida a Telegram (6 h)

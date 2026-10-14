@@ -210,8 +210,9 @@ eso los pasos A van antes de mover dinero.
    ```bash
    cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-account --config config.bybiteu.yaml
    ```
-   La comisión debe ser 0,100%: con más, las simulaciones dejan de valer (con 0,38% el
-   resultado simulado desde 2022 baja de +161% a +89%).
+   La comisión debe coincidir con `engine.fee_pct` de `config.bybiteu.yaml`. La cuenta
+   paga un 0,25% en los 17 pares, a mercado y con orden limitada (comprobado el
+   2026-10-14); con esa comisión la simulación desde 2022 da +119%, frente a +161% al 0,10%.
 4. Con unos 20 USDC en la cuenta, compra y venta **real** de 5 USDC (pide confirmación):
    ```bash
    cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-api --usd 5 --config config.bybiteu.yaml
