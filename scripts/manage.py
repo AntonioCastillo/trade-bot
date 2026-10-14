@@ -12,7 +12,8 @@ Uso:
     python scripts/manage.py pause CABEZA [--days N]     # pausa manual (sin --days: hasta reanudar)
     python scripts/manage.py resume CABEZA               # levanta la pausa manual y la de strikes
     python scripts/manage.py pauses                      # qué cabezas están en pausa
-    python scripts/manage.py verify-stops [--symbol PAR] # prueba las órdenes de stop contra KuCoin (no opera)
+    python scripts/manage.py verify-account [--config F] # pares, saldo y comisión del exchange (no opera)
+    python scripts/manage.py verify-stops [--symbol PAR] [--config F] # prueba las órdenes de stop (no opera)
     python scripts/manage.py verify-api [--usd USD] [--symbol SYMBOL]
     python scripts/manage.py backtest [--limit N] [--config PATH]
 """
@@ -137,15 +138,21 @@ def cmd_pauses(args: argparse.Namespace) -> None:
         print(f"{head}: " + ("; ".join(pauses[head]) if head in pauses else "operando"))
 
 
+def cmd_verify_account(args: argparse.Namespace) -> None:
+    from verify_account import main as verify_account_main
+    sys.argv = [sys.argv[0], "--config", args.config]
+    verify_account_main()
+
+
 def cmd_verify_stops(args: argparse.Namespace) -> None:
     from verify_stops import main as verify_stops_main
-    sys.argv = [sys.argv[0], "--symbol", args.symbol]
+    sys.argv = [sys.argv[0], "--config", args.config] + (["--symbol", args.symbol] if args.symbol else [])
     verify_stops_main()
 
 
 def cmd_verify_api(args: argparse.Namespace) -> None:
     from verify_api import main as verify_main
-    sys.argv = [sys.argv[0], str(args.usd), args.symbol]
+    sys.argv = [sys.argv[0], str(args.usd), args.symbol or "", args.config]
     verify_main()
 
 
@@ -200,14 +207,20 @@ def main() -> None:
     p_pauses = subparsers.add_parser("pauses", help="Lista las cabezas en pausa")
     p_pauses.set_defaults(func=cmd_pauses)
 
-    p_vs = subparsers.add_parser("verify-stops", help="Prueba las órdenes de stop contra KuCoin real (no opera)")
-    p_vs.add_argument("--symbol", type=str, default="ETH/USDT", help="Par a usar (def: ETH/USDT)")
+    p_va = subparsers.add_parser("verify-account", help="Comprueba pares, saldo y comisión del exchange (no opera)")
+    p_va.add_argument("--config", type=str, default="config.yaml", help="Fichero de configuración")
+    p_va.set_defaults(func=cmd_verify_account)
+
+    p_vs = subparsers.add_parser("verify-stops", help="Prueba las órdenes de stop contra el exchange real (no opera)")
+    p_vs.add_argument("--symbol", type=str, default=None, help="Par a usar (def: ETH contra la moneda de cotización)")
+    p_vs.add_argument("--config", type=str, default="config.yaml", help="Fichero de configuración")
     p_vs.set_defaults(func=cmd_verify_stops)
 
     # verify-api
     p_ver = subparsers.add_parser("verify-api", help="Verifica las credenciales API con una micro-orden de prueba")
     p_ver.add_argument("--usd", type=float, default=1.0, help="Importe en USD (def: 1.0)")
-    p_ver.add_argument("--symbol", type=str, default="BTC/USDT", help="Símbolo a usar (def: BTC/USDT)")
+    p_ver.add_argument("--symbol", type=str, default=None, help="Símbolo a usar (def: BTC contra la moneda de cotización)")
+    p_ver.add_argument("--config", type=str, default="config.yaml", help="Fichero de configuración")
     p_ver.set_defaults(func=cmd_verify_api)
 
     # backtest

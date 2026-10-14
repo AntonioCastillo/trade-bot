@@ -160,6 +160,15 @@ class Instrument:
     paused_while_open: list[str] = field(default_factory=list)  # cabezas cuyas posiciones abiertas pausan a esta
 
 
+# Exchanges admitidos: nombre para mensajes, prefijo de las claves en el .env y si la
+# API exige además una passphrase (KuCoin sí; Bybit solo clave y secreto).
+EXCHANGES: dict[str, dict[str, Any]] = {
+    "kucoin": {"name": "KuCoin", "env": "KUCOIN", "passphrase": True},
+    "kucoinfutures": {"name": "KuCoin Futures", "env": "KUCOIN", "passphrase": True},
+    "bybiteu": {"name": "Bybit EU", "env": "BYBIT", "passphrase": False},
+}
+
+
 @dataclass
 class Credentials:
     api_key: str = ""
@@ -167,10 +176,11 @@ class Credentials:
     api_passphrase: str = ""
     telegram_token: str = ""
     telegram_chat_id: str = ""
+    needs_passphrase: bool = True
 
     @property
     def is_complete(self) -> bool:
-        return bool(self.api_key and self.api_secret and self.api_passphrase)
+        return bool(self.api_key and self.api_secret and (self.api_passphrase or not self.needs_passphrase))
 
     @property
     def has_telegram(self) -> bool:
@@ -195,14 +205,29 @@ class Config:
     log_level: str = "INFO"
     credentials: Credentials = field(default_factory=Credentials)
 
+    @property
+    def exchange_name(self) -> str:
+        """Nombre del exchange para mensajes (p.ej. 'Bybit EU')."""
+        return EXCHANGES.get(self.exchange, {}).get("name", self.exchange)
+
+    @property
+    def reference_symbol(self) -> str:
+        """Par de BTC contra la moneda de cotización: filtro macro, fuerza relativa
+        y verificación de la API."""
+        return f"BTC/{self.risk.quote_currency}"
+
     def validate(self) -> None:
         if self.mode not in ("paper", "live"):
             raise ValueError(f"mode inválido: {self.mode!r} (usa 'paper' o 'live')")
+        if self.exchange not in EXCHANGES:
+            raise ValueError(f"exchange no admitido: {self.exchange!r} (usa {', '.join(EXCHANGES)})")
         if self.mode == "live" and not self.credentials.is_complete:
-            raise ValueError(
-                "mode=live requiere KUCOIN_API_KEY, KUCOIN_API_SECRET y "
-                "KUCOIN_API_PASSPHRASE en el .env"
-            )
+            raise ValueError(f"mode=live requiere {', '.join(credential_env_names(self.exchange))} en el .env")
+        # Un símbolo en otra moneda de cotización operaría contra un saldo que el bot no mira.
+        quote = self.risk.quote_currency
+        foreign = [ins.symbol for ins in self.instruments if ins.symbol.split(":")[0].split("/")[-1] != quote]
+        if foreign:
+            raise ValueError(f"Símbolos que no cotizan en {quote} (risk.quote_currency): {', '.join(foreign)}")
         if not self.instruments and not (
             self.sniper.enabled or self.carry.enabled or self.xsmom.enabled
         ):
@@ -313,6 +338,13 @@ def _build_instruments(
     return instruments
 
 
+def credential_env_names(exchange: str) -> list[str]:
+    """Variables del .env con las claves de la API de ese exchange."""
+    meta = EXCHANGES.get(exchange, EXCHANGES["kucoin"])
+    names = [f"{meta['env']}_API_KEY", f"{meta['env']}_API_SECRET"]
+    return names + [f"{meta['env']}_API_PASSPHRASE"] if meta["passphrase"] else names
+
+
 def load_config(path: str | Path = "config.yaml") -> Config:
     """Lee config.yaml, mezcla los secretos del .env y valida el resultado."""
     load_dotenv()
@@ -331,17 +363,20 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     global_timeframe = raw.get("timeframe", "1h")
     instruments = _build_instruments(raw.get("universe") or [], risk, global_timeframe)
 
+    exchange = raw.get("exchange", "kucoin")
+    meta = EXCHANGES.get(exchange, EXCHANGES["kucoin"])      # uno desconocido lo rechaza validate()
     credentials = Credentials(
-        api_key=os.getenv("KUCOIN_API_KEY", ""),
-        api_secret=os.getenv("KUCOIN_API_SECRET", ""),
-        api_passphrase=os.getenv("KUCOIN_API_PASSPHRASE", ""),
+        api_key=os.getenv(f"{meta['env']}_API_KEY", ""),
+        api_secret=os.getenv(f"{meta['env']}_API_SECRET", ""),
+        api_passphrase=os.getenv(f"{meta['env']}_API_PASSPHRASE", "") if meta["passphrase"] else "",
         telegram_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
+        needs_passphrase=bool(meta["passphrase"]),
     )
 
     cfg = Config(
         mode=raw.get("mode", "paper"),
-        exchange=raw.get("exchange", "kucoin"),
+        exchange=exchange,
         timeframe=raw.get("timeframe", "1h"),
         lookback=int(raw.get("lookback", 300)),
         instruments=instruments,

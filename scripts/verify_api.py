@@ -1,8 +1,9 @@
-"""Verifica la API real de KuCoin con una operación de ida y vuelta de ~1 USD.
+"""Verifica la API real del exchange con una operación de ida y vuelta de ~1 USD.
 
 Uso:
-    python scripts/verify_api.py             # 1 USD en BTC/USDT
+    python scripts/verify_api.py             # 1 en BTC contra la moneda de cotización
     python scripts/verify_api.py 1 XRP/USDT  # importe y símbolo
+    python scripts/verify_api.py 5 BTC/USDC config.bybiteu.yaml   # otra configuración
 
 Sin claves en .env, o sin confirmar, funciona en DRY-RUN (no opera): solo
 muestra el plan y comprueba precio, mínimo y saldo. Para ejecutar de verdad
@@ -21,7 +22,7 @@ except Exception:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from tradebot.config import load_config  # noqa: E402
+from tradebot.config import credential_env_names, load_config  # noqa: E402
 from tradebot.exchange import Exchange  # noqa: E402
 from tradebot.factory import setup_logging  # noqa: E402
 from tradebot.notifier import build_notifier  # noqa: E402
@@ -30,9 +31,8 @@ from tradebot.selfcheck import run_api_check  # noqa: E402
 
 def main() -> None:
     usd = float(sys.argv[1]) if len(sys.argv) > 1 else 1.0
-    symbol = sys.argv[2] if len(sys.argv) > 2 else "BTC/USDT"
-
-    config = load_config()
+    config = load_config(sys.argv[3] if len(sys.argv) > 3 else "config.yaml")
+    symbol = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else config.reference_symbol
     setup_logging(config.log_level)
     exchange = Exchange(config)
 
@@ -44,12 +44,13 @@ def main() -> None:
     print(f"Símbolo:        {symbol}")
     print(f"Precio actual:  {price}")
     print(f"Importe:        {usd} {config.risk.quote_currency}")
-    print(f"Mínimo KuCoin:  {limits.get('min_cost')} {config.risk.quote_currency}")
+    print(f"Exchange:       {config.exchange_name}")
+    print(f"Mínimo:         {limits.get('min_cost')} {config.risk.quote_currency}")
     print("Acción:         COMPRA a mercado + VENTA inmediata (round-trip real)")
     print("=" * 60)
 
     if not config.credentials.is_complete:
-        print("\nDRY-RUN: faltan claves en .env (KUCOIN_API_KEY/SECRET/PASSPHRASE).")
+        print(f"\nDRY-RUN: faltan claves en .env ({', '.join(credential_env_names(config.exchange))}).")
         print("Rellénalas para poder ejecutar la verificación real.")
         return
 

@@ -36,6 +36,10 @@ UNPROTECTED_ALERT_SECONDS = 900.0     # avisar si una posición lleva este tiemp
 URGENT_EXITS = ("stop-loss", "trailing-stop")
 
 
+class ForeignPositionsError(RuntimeError):
+    """Hay posiciones abiertas registradas que pertenecen a otro exchange."""
+
+
 class Engine:
     def __init__(
         self,
@@ -399,7 +403,7 @@ class Engine:
         # Filtro Macro de BTC: congela nuevas compras en altcoins si BTC < EMA50
         if getattr(instrument, "macro_btc_filter", False):
             from .regime import is_btc_macro_bullish
-            if not is_btc_macro_bullish(self.exchange):
+            if not is_btc_macro_bullish(self.exchange, self.config.reference_symbol):
                 logger.info("[%s] Compras pausadas en %s (Filtro Macro BTC: BTC < EMA50)", head, symbol)
                 return
 
@@ -814,7 +818,7 @@ class Engine:
             return True
         if status == "error":
             # No se pudo cancelar: vender es lo prioritario. Si la orden sigue viva, se
-            # cancelará como huérfana en el siguiente ciclo (KuCoin no bloquea el saldo).
+            # cancelará como huérfana en el siguiente ciclo (el exchange no bloquea el saldo).
             return False
         if gone is None:
             return None
@@ -875,7 +879,7 @@ class Engine:
                 self.notifier.notify(
                     "🆘 <b>Órdenes de stop sin posición que no puedo cancelar</b>\n"
                     + "\n".join(failed)
-                    + "\nCancélalas a mano en KuCoin: podrían vender una compra posterior de esa moneda."
+                    + f"\nCancélalas a mano en {self.config.exchange_name}: podrían vender una compra posterior de esa moneda."
                 )
         for pos in self.positions:
             self._sync_stop(pos)
@@ -1034,8 +1038,20 @@ class Engine:
         """Readopta las posiciones abiertas persistidas para seguir gestionándolas
         tras un reinicio (clave en live: si no, quedarían huérfanas). En paper
         restaura también el efectivo simulado para que el equity cuadre. En live
-        RECONCILIA contra el saldo real de KuCoin (descarta/ajusta lo que no cuadre)."""
+        RECONCILIA contra el saldo real del exchange (descarta/ajusta lo que no cuadre)."""
         self.positions = self.storage.load_open_positions()
+        if self.config.mode == "live":
+            # Posiciones en otra moneda de cotización son de otro exchange (cambio de
+            # KuCoin a Bybit a medias): reconciliarlas contra esta cuenta las daría por
+            # vendidas y anotaría cierres falsos. Mejor no arrancar.
+            quote = self.config.risk.quote_currency
+            foreign = [p.symbol for p in self.positions if p.symbol.split(":")[0].split("/")[-1] != quote]
+            if foreign:
+                self.positions = []
+                raise ForeignPositionsError(
+                    f"Hay posiciones abiertas que no cotizan en {quote} ({', '.join(foreign)}): son de otro "
+                    f"exchange. Ciérralas allí con la configuración anterior antes de arrancar en {self.config.exchange_name}."
+                )
         for pos in self.positions:
             try:
                 ins = self.config.instrument(pos.symbol)
