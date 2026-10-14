@@ -205,6 +205,7 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
                   on_close: Callable[[dict], None] | None = None,
                   exposure_on_equity: bool | None = None,
                   size_on_equity: bool = False,
+                  signals: "SignalSource | None" = None,
                   ) -> tuple[pd.DataFrame, pd.Series]:
     """Simula un grupo de instrumentos con saldo compartido: una cabeza, o varias a
     la vez (así compiten por el USDT libre y los topes, como en real). Devuelve
@@ -217,7 +218,10 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
     p. ej. pausar una cabeza tras varios stops).
     `exposure_on_equity` es la base del tope de exposición (None = lo que diga
     `risk.exposure_on_equity` en el config). `size_on_equity` mide una variante que
-    el bot no tiene: dimensionar sobre el equity total en vez de sobre el USDT libre."""
+    el bot no tiene: dimensionar sobre el equity total en vez de sobre el USDT libre.
+    `signals` (ver `load_signal_source`): las señales y los filtros salen de las velas de otro
+    exchange, como con `data_exchange` en el bot; las entradas se hacen al precio del
+    exchange simulado en ese momento y las salidas con sus velas."""
     if exposure_on_equity is None:
         exposure_on_equity = bool(getattr(config.risk, "exposure_on_equity", False))
     fee, slip = config.engine.fee_pct, config.engine.slippage_pct
@@ -226,19 +230,33 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
     # Hasta el último día completo: resultados (y caché de señales) estables durante el día.
     cutoff = min(df.index[-1] for df in fine.values()).floor("D")
     fine = {s: df[df.index < cutoff] for s, df in fine.items()}
+    # Velas de las señales: las mismas, o las de la otra fuente en el mismo tramo.
+    sigfine = fine if signals is None else {
+        s: signals.fine[s][(signals.fine[s].index >= since) & (signals.fine[s].index < cutoff)] for s in fine}
     macro = None
     if any(ins.macro_btc_filter for ins in instruments):
-        macro = MacroFilter(candles(BTC, "4h", since - pd.Timedelta(days=90), refresh))
+        btc4h = (candles(BTC, "4h", since - pd.Timedelta(days=90), refresh) if signals is None
+                 else signals.btc_4h[signals.btc_4h.index >= since - pd.Timedelta(days=90)])
+        macro = MacroFilter(btc4h)
 
     # Filtro de tendencia de la propia moneda (misma media que el motor, vela en formación incluida).
-    asset_trend = {ins.symbol: MacroFilter(fine[ins.symbol], ins.asset_trend_ema)
+    asset_trend = {ins.symbol: MacroFilter(sigfine[ins.symbol], ins.asset_trend_ema)
                    for ins in instruments if ins.asset_trend_ema > 0}
 
     signals_at: dict[pd.Timestamp, list] = {}
     for ins in instruments:
-        for t, price, stop, take, atr in head_signals(ins, fine[ins.symbol], config.lookback - 1):
-            if t >= start:
-                signals_at.setdefault(t, []).append((ins, price, stop, take, atr))
+        sig_ins = ins if signals is None else replace(ins, symbol=signals.symbol(ins.symbol))
+        here = fine[ins.symbol]["close"]
+        for t, price, stop, take, atr in head_signals(sig_ins, sigfine[ins.symbol], config.lookback - 1):
+            if t < start:
+                continue
+            if signals is not None:
+                # Se compra aquí, al cierre de la última barra de 15 min de la vela de la señal.
+                bar = t - pd.Timedelta(EXIT_TF)
+                if bar not in here.index or pd.isna(here[bar]):
+                    continue                              # aquí todavía no cotizaba
+                price = float(here[bar])
+            signals_at.setdefault(t, []).append((ins, price, stop, take, atr))
 
     idx = None
     for df in fine.values():
@@ -402,6 +420,29 @@ def simulate_head(instruments: list[Instrument], config: Config, start: pd.Times
     return pd.DataFrame(trades, columns=columns), equity
 
 
+class SignalSource:
+    """Velas de otro exchange para las señales (ver `load_signal_source`)."""
+
+    def __init__(self, exchange: str, quote: str, fine: dict[str, pd.DataFrame], btc_4h: pd.DataFrame):
+        self.exchange, self.quote, self.fine, self.btc_4h = exchange, quote, fine, btc_4h
+
+    def symbol(self, symbol: str) -> str:
+        return f"{symbol.split('/')[0]}/{self.quote}@{self.exchange}"      # clave de caché de señales
+
+
+def load_signal_source(exchange: str, quote: str, instruments: list[Instrument], start: pd.Timestamp,
+                       refresh: bool = False) -> SignalSource:
+    """Descarga (o lee de su caché) las velas de `exchange` para las señales y deja el
+    módulo apuntando otra vez al exchange que se simula."""
+    current = (EXCHANGE, BTC.split("/")[1])
+    since = start - pd.Timedelta(days=WARMUP_DAYS)
+    use_exchange(exchange, quote)
+    fine = {ins.symbol: candles(f"{ins.symbol.split('/')[0]}/{quote}", "15m", since, refresh) for ins in instruments}
+    btc_4h = candles(f"BTC/{quote}", "4h", since - pd.Timedelta(days=90), refresh)
+    use_exchange(*current)
+    return SignalSource(exchange, quote, fine, btc_4h)
+
+
 # --- Informe ---------------------------------------------------------------------------
 
 def _half_year(index: pd.DatetimeIndex) -> pd.Index:
@@ -505,6 +546,9 @@ def main() -> None:
     parser.add_argument("--exchange", default=None,
                         help="Simular con las velas de otro exchange (def: el de la configuración), p. ej. kucoin")
     parser.add_argument("--quote", default=None, help="Moneda de cotización de esas velas (p. ej. USDT con kucoin)")
+    parser.add_argument("--signal-exchange", default=None,
+                        help="Señales con las velas de otro exchange (def: `data_exchange` de la configuración)")
+    parser.add_argument("--signal-quote", default=None, help="Moneda de cotización de las velas de las señales")
     args = parser.parse_args()
 
     config = load_config(args.config, require_credentials=False)
@@ -514,6 +558,12 @@ def main() -> None:
         config.instruments = [replace(i, symbol=f"{i.symbol.split('/')[0]}/{quote}") for i in config.instruments]
     start = pd.Timestamp(args.start, tz="UTC")
     heads = fixed_heads(config)
+    signals = None
+    sig_exchange = args.signal_exchange or (config.data_exchange if config.signals_elsewhere else None)
+    if sig_exchange:
+        sig_quote = args.signal_quote or config.data_quote or quote
+        signals = load_signal_source(sig_exchange, sig_quote, config.instruments, start, args.refresh)
+        print(f"Señales con las velas de {sig_exchange} ({sig_quote}); entradas y salidas con las de {EXCHANGE}")
     if args.head:
         if args.head not in heads:
             print(f"Cabeza desconocida o con rotación RS: {args.head}. Disponibles: {', '.join(heads)}")
@@ -521,12 +571,12 @@ def main() -> None:
         heads = {args.head: heads[args.head]}
     if args.combined:
         everything = [ins for group in heads.values() for ins in group]
-        trades, equity = simulate_head(everything, config, start, refresh=args.refresh)
+        trades, equity = simulate_head(everything, config, start, refresh=args.refresh, signals=signals)
         print_combined(heads, trades, equity)
         print("\nNota: rendimiento pasado NO garantiza resultados futuros.")
         return
     for name, instruments in heads.items():
-        trades, equity = simulate_head(instruments, config, start, refresh=args.refresh)
+        trades, equity = simulate_head(instruments, config, start, refresh=args.refresh, signals=signals)
         print_report(name, instruments, trades, equity, start, args.trades)
     print("\nNota: cada cabeza se simula sola (usa --combined para verlas juntas); "
           "rendimiento pasado NO garantiza resultados futuros.")

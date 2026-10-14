@@ -19,6 +19,13 @@ logger = logging.getLogger(__name__)
 
 OHLCV_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
 
+# Velas por petición que admite cada exchange (las de OKX van de 100 en 100).
+OHLCV_PAGE = {"kucoin": 1500, "kucoinfutures": 1500, "binance": 1000, "bybit": 1000, "bybiteu": 1000,
+              "okx": 100, "myokx": 100}
+# Respuestas de OKX al cancelar una orden de stop que ya no está viva (no existe, ya
+# cancelada, ya ejecutada o cancelándose): equivalen a "ya no existe".
+OKX_GONE_CODES = {"51400", "51401", "51402", "51403", "51410", "51603"}
+
 # Un "último precio" a más de esto de la horquilla del propio ticker no es de fiar.
 PRICE_BAND_TOLERANCE = 0.01
 SUSPECT_LOG_SECONDS = 300.0      # como mucho un aviso por símbolo en este tiempo
@@ -130,13 +137,31 @@ class Exchange:
     página de velas) se resuelven aquí; el resto del bot no las ve."""
 
     _is_bybit = False
+    _is_okx = False
     _ohlcv_page = 1500
+    _data_client = None
+    _data_page = 1500
 
     def __init__(self, config: Config):
         self.config = config
         self._is_bybit = config.exchange.startswith("bybit")
-        self._ohlcv_page = 1000 if self._is_bybit else 1500     # máximo de velas por petición
+        self._is_okx = config.exchange in ("okx", "myokx")
+        self._ohlcv_page = OHLCV_PAGE.get(config.exchange, 500)     # máximo de velas por petición
         self._client = self._build_client()
+        if getattr(config, "signals_elsewhere", False):
+            # Las velas de las señales salen de otro exchange (solo datos públicos, sin claves):
+            # su volumen es el que da sentido a las cabezas que lo miran.
+            import ccxt
+            if not hasattr(ccxt, config.data_exchange):
+                raise ValueError(f"data_exchange desconocido para ccxt: {config.data_exchange!r}")
+            self._data_client = getattr(ccxt, config.data_exchange)({"enableRateLimit": True})
+            self._data_page = OHLCV_PAGE.get(config.data_exchange, 500)
+
+    def _candle_source(self, symbol: str):
+        """(cliente, símbolo, velas por petición) de donde salen las velas de `symbol`."""
+        if self._data_client is not None:
+            return self._data_client, self.config.data_symbol(symbol), self._data_page
+        return self._client, self._normalize_symbol(symbol), self._ohlcv_page
 
     def _warn_suspect(self, symbol: str, ticker: dict, used: str) -> None:
         """Deja constancia de un último precio descartado, sin llenar el log."""
@@ -159,7 +184,7 @@ class Exchange:
             # evitar rechazos de firma si el reloj local va desfasado.
             "options": {"adjustForTimeDifference": True},
         }
-        if self._is_bybit:
+        if self._is_bybit or self._is_okx:
             # ccxt asume derivados por defecto en Bybit; el bot solo opera al contado.
             params["options"]["defaultType"] = "spot"
         creds = self.config.credentials
@@ -201,9 +226,9 @@ class Exchange:
     def fetch_ohlcv(
         self, symbol: str, timeframe: str, limit: int = 200
     ) -> pd.DataFrame:
-        """Devuelve un DataFrame de velas indexado por tiempo (UTC)."""
-        symbol = self._normalize_symbol(symbol)
-        raw = self._client.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        """Devuelve un DataFrame de velas indexado por tiempo (UTC), de la fuente de señales."""
+        client, symbol, _ = self._candle_source(symbol)
+        raw = client.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(raw, columns=OHLCV_COLUMNS)
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df = df.set_index("timestamp")
@@ -215,13 +240,13 @@ class Exchange:
     ) -> pd.DataFrame:
         """Descarga `total` velas paginando hacia atrás (el exchange limita las velas
         por petición). Devuelve las `total` más recientes, ordenadas por tiempo."""
-        symbol = self._normalize_symbol(symbol)
-        tf_ms = self._client.parse_timeframe(timeframe) * 1000
-        now = self._client.milliseconds()
+        client, symbol, page = self._candle_source(symbol)
+        tf_ms = client.parse_timeframe(timeframe) * 1000
+        now = client.milliseconds()
         since = now - total * tf_ms
         rows: list = []
         while since < now:
-            batch = self._client.fetch_ohlcv(symbol, timeframe, since=since, limit=self._ohlcv_page)
+            batch = client.fetch_ohlcv(symbol, timeframe, since=since, limit=page)
             if not batch or len(batch) == 0:
                 break
             
@@ -429,7 +454,8 @@ class Exchange:
         info = order.get("info") or {}
         return {
             "id": order.get("id") or info.get("id") or info.get("orderId"),
-            "client_id": order.get("clientOrderId") or info.get("clientOid") or info.get("orderLinkId"),
+            "client_id": (order.get("clientOrderId") or info.get("clientOid") or info.get("orderLinkId")
+                          or info.get("algoClOrdId")),
             "symbol": order.get("symbol"),
             "amount": order.get("amount"),
             "trigger_price": order.get("triggerPrice") or order.get("stopPrice") or info.get("stopPrice"),
@@ -449,6 +475,10 @@ class Exchange:
             raise ValueError(f"{symbol}: cantidad o precio de stop no válidos ({amount}, {price})")
         if self._is_bybit:
             params = {"triggerPrice": price, "clientOrderId": client_id}
+        elif self._is_okx:
+            # OKX: orden "conditional" (algo) de stop a mercado; su identificador de cliente
+            # es algoClOrdId (solo letras y números).
+            params = {"stopLossPrice": price, "clientOrderId": client_id, "algoClOrdId": client_id}
         else:
             params = {"stopLossPrice": price, "clientOid": client_id}
         order = self._client.create_order(symbol, "market", "sell", amount, None, params)
@@ -461,16 +491,29 @@ class Exchange:
         (disparada, cancelada o desconocida); otros fallos se propagan."""
         import ccxt
         try:
-            self._client.cancel_order(order_id, self._normalize_symbol(symbol) if symbol else None, {"trigger": True})
-            return True
+            result = self._client.cancel_order(order_id, self._normalize_symbol(symbol) if symbol else None, {"trigger": True})
         except (ccxt.OrderNotFound, ccxt.InvalidOrder):
             return False
+        if self._is_okx:
+            # OKX cancela en lote y responde el resultado de cada orden dentro de los datos,
+            # sin lanzar error: hay que mirarlo.
+            info = (result or {}).get("info") or {}
+            code, msg = str(info.get("sCode") or "0"), str(info.get("sMsg") or "")
+            if code != "0":
+                if code in OKX_GONE_CODES or "not exist" in msg.lower():
+                    return False
+                raise ccxt.ExchangeError(f"OKX no canceló la orden de stop {order_id}: {code} {msg}")
+        return True
 
     @with_network_retry
     def fetch_open_stop_orders(self) -> list[dict]:
         """Órdenes de stop vivas (sin disparar) de la cuenta."""
-        # Bybit devuelve 20 por defecto; 50 es su máximo y sobra para las posiciones del bot.
-        orders = self._client.fetch_open_orders(None, None, 50 if self._is_bybit else None, {"trigger": True})
+        if self._is_okx:
+            # OKX separa las órdenes algo por tipo: las del bot son "conditional".
+            orders = self._client.fetch_open_orders(None, None, 100, {"trigger": True, "ordType": "conditional"})
+        else:
+            # Bybit devuelve 20 por defecto; 50 es su máximo y sobra para las posiciones del bot.
+            orders = self._client.fetch_open_orders(None, None, 50 if self._is_bybit else None, {"trigger": True})
         return [self._stop_order_view(o) for o in orders]
 
     @with_network_retry

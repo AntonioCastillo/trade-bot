@@ -166,6 +166,7 @@ EXCHANGES: dict[str, dict[str, Any]] = {
     "kucoin": {"name": "KuCoin", "env": "KUCOIN", "passphrase": True},
     "kucoinfutures": {"name": "KuCoin Futures", "env": "KUCOIN", "passphrase": True},
     "bybiteu": {"name": "Bybit EU", "env": "BYBIT", "passphrase": False},
+    "myokx": {"name": "OKX Europa", "env": "OKX", "passphrase": True},
 }
 
 
@@ -204,6 +205,23 @@ class Config:
     db_path: str = "data/tradebot.db"
     log_level: str = "INFO"
     credentials: Credentials = field(default_factory=Credentials)
+    # Fuente de las señales: exchange (de ccxt, solo datos públicos) del que salen las velas
+    # para estrategias y filtros, y su moneda de cotización. Vacío = el mismo de `exchange`.
+    # Las órdenes, los saldos y los precios con los que se deciden las salidas son siempre
+    # los de `exchange`.
+    data_exchange: str = ""
+    data_quote: str = ""
+
+    @property
+    def signals_elsewhere(self) -> bool:
+        """¿Las señales salen de un exchange distinto del que opera?"""
+        return bool(self.data_exchange) and self.data_exchange != self.exchange
+
+    def data_symbol(self, symbol: str) -> str:
+        """Par equivalente en la fuente de señales (p.ej. NEAR/USDC -> NEAR/USDT)."""
+        if not self.signals_elsewhere:
+            return symbol
+        return f"{symbol.split('/')[0]}/{self.data_quote or self.risk.quote_currency}"
 
     @property
     def exchange_name(self) -> str:
@@ -345,10 +363,13 @@ def credential_env_names(exchange: str) -> list[str]:
     return names + [f"{meta['env']}_API_PASSPHRASE"] if meta["passphrase"] else names
 
 
-def load_config(path: str | Path = "config.yaml", require_credentials: bool = True) -> Config:
+def load_config(path: str | Path = "config.yaml", require_credentials: bool = True,
+                exchange: str | None = None) -> Config:
     """Lee config.yaml, mezcla los secretos del .env y valida el resultado.
     `require_credentials=False` para herramientas que no operan (simulaciones, análisis,
-    verificaciones que ya avisan si faltan claves): cargan la configuración real sin claves."""
+    verificaciones que ya avisan si faltan claves): cargan la configuración real sin claves.
+    `exchange` sustituye al del fichero (y sus claves): verificar otro exchange con la misma
+    configuración antes de cambiar a él."""
     load_dotenv()
 
     raw: dict[str, Any] = {}
@@ -365,7 +386,7 @@ def load_config(path: str | Path = "config.yaml", require_credentials: bool = Tr
     global_timeframe = raw.get("timeframe", "1h")
     instruments = _build_instruments(raw.get("universe") or [], risk, global_timeframe)
 
-    exchange = raw.get("exchange", "kucoin")
+    exchange = exchange or raw.get("exchange", "kucoin")
     meta = EXCHANGES.get(exchange, EXCHANGES["kucoin"])      # uno desconocido lo rechaza validate()
     credentials = Credentials(
         api_key=os.getenv(f"{meta['env']}_API_KEY", ""),
@@ -394,6 +415,8 @@ def load_config(path: str | Path = "config.yaml", require_credentials: bool = Tr
         db_path=(raw.get("storage") or {}).get("db_path", "data/tradebot.db"),
         log_level=(raw.get("logging") or {}).get("level", "INFO"),
         credentials=credentials,
+        data_exchange=str(raw.get("data_exchange") or ""),
+        data_quote=str(raw.get("data_quote") or ""),
     )
     cfg.validate(require_credentials)
     return cfg

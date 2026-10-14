@@ -36,9 +36,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Verifica las órdenes de stop contra el exchange real")
     parser.add_argument("--symbol", default=None, help="Par a usar (def: ETH contra la moneda de cotización)")
     parser.add_argument("--config", default="config.yaml", help="Fichero de configuración (def: config.yaml)")
+    parser.add_argument("--exchange", default=None, help="Otro exchange con la misma configuración (p. ej. myokx)")
     args = parser.parse_args()
 
-    config = load_config(args.config, require_credentials=False)
+    config = load_config(args.config, require_credentials=False, exchange=args.exchange)
     if not config.credentials.is_complete:
         print(f"Faltan las claves de {config.exchange_name} en .env ({', '.join(credential_env_names(config.exchange))})")
         sys.exit(1)
@@ -64,7 +65,7 @@ def main() -> None:
         print("No conozco la cantidad mínima de este par; prueba con otro --symbol")
         sys.exit(1)
 
-    client_id = CLIENT_PREFIX + "verify" + uuid.uuid4().hex[:16]
+    client_id = CLIENT_PREFIX + "verify" + uuid.uuid4().hex[:16]            # 28 caracteres, sin guiones
     order_id = None
     try:
         order = exchange.create_stop_sell(symbol, amount, trigger, client_id)

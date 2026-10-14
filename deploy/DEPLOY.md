@@ -237,6 +237,41 @@ automático vuelve a la versión anterior. Mientras tanto llegarán varios aviso
 **Simulaciones:** `scripts/livesim.py` usa las velas del exchange de `config.yaml`, que en
 Bybit EU solo llegan a octubre de 2025. Para estudios largos: `--exchange kucoin --quote USDT`.
 
+## 11. OKX Europa con señales de otro exchange (preparado, sin activar)
+
+OKX Europa cobra menos que Bybit EU (al contado, a mercado: 0,10% con la cuenta de derivados
+X-Perps abierta, 0,20% sin ella), pero su volumen en USDC es muy bajo y las cabezas que miran
+el volumen (`volumen_explosivo`, `capitulacion`) ven picos donde no los hay. Por eso el bot
+puede sacar las velas de las señales de un mercado líquido (`data_exchange`, solo datos
+públicos) y operar en OKX: órdenes, saldos y precios de las salidas siguen siendo de OKX.
+
+### Verificar la cuenta (sin tocar el bot real)
+1. Abrir la cuenta en OKX Europa y, si se quiere el 0,10%, la cuenta de derivados X-Perps
+   (pide un test de conveniencia). El bot no opera derivados.
+2. Clave de API con **lectura y trading, sin retirada**, limitada a la IP del VPS. OKX pide
+   además una passphrase que eliges al crearla. En `.env`:
+   `OKX_API_KEY=...`, `OKX_API_SECRET=...` y `OKX_API_PASSPHRASE=...`.
+3. Las tres verificaciones, con la configuración actual pero contra OKX:
+   ```bash
+   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-account --exchange myokx
+   ```
+   ```bash
+   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-api --usd 10 --exchange myokx
+   ```
+   ```bash
+   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-stops --exchange myokx
+   ```
+   Las órdenes de stop de OKX son de otro tipo (algo "conditional") y no se han probado en
+   real: si `verify-stops` falla, hay que corregir el código antes de seguir.
+
+### El cambio
+Igual que en la sección 10 (pausar, cerrar posiciones, mover el saldo), con un PR que ponga en
+`config.yaml`: `exchange: myokx`, `data_exchange: binance`, `data_quote: USDT` y
+`engine.fee_pct` con la comisión que muestre `verify-account`.
+
+**Simular antes:** `python scripts/livesim.py --combined --signal-exchange binance --signal-quote USDT`
+(con `--exchange myokx --quote USDC` para usar sus precios).
+
 ## Notas
 - **Firewall:** no requiere puertos entrantes; solo HTTPS saliente (por defecto OK).
 - **Reloj:** `chronyd` queda activo; el bot además ajusta la diferencia con el exchange.

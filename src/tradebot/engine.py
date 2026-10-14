@@ -88,9 +88,11 @@ class Engine:
 
     def process(self, symbol: str, candles: pd.DataFrame) -> None:
         current_price = float(candles["close"].iloc[-1])
-        self.last_prices[symbol] = current_price
-
-        self._check_exits(symbol, current_price, candles=candles)
+        if not getattr(self.config, "signals_elsewhere", False):
+            # Con las velas de otro exchange, su cierre no es el precio de aquí: las salidas
+            # y el precio de referencia los pone el exchange que opera (ver daemon).
+            self.last_prices[symbol] = current_price
+            self._check_exits(symbol, current_price, candles=candles)
         self._check_entry(symbol, candles, current_price)
 
         if self.enforce_daily_loss:

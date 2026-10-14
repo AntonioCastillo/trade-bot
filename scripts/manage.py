@@ -140,19 +140,20 @@ def cmd_pauses(args: argparse.Namespace) -> None:
 
 def cmd_verify_account(args: argparse.Namespace) -> None:
     from verify_account import main as verify_account_main
-    sys.argv = [sys.argv[0], "--config", args.config]
+    sys.argv = [sys.argv[0], "--config", args.config] + (["--exchange", args.exchange] if args.exchange else [])
     verify_account_main()
 
 
 def cmd_verify_stops(args: argparse.Namespace) -> None:
     from verify_stops import main as verify_stops_main
-    sys.argv = [sys.argv[0], "--config", args.config] + (["--symbol", args.symbol] if args.symbol else [])
+    sys.argv = ([sys.argv[0], "--config", args.config] + (["--symbol", args.symbol] if args.symbol else [])
+                + (["--exchange", args.exchange] if args.exchange else []))
     verify_stops_main()
 
 
 def cmd_verify_api(args: argparse.Namespace) -> None:
     from verify_api import main as verify_main
-    sys.argv = [sys.argv[0], str(args.usd), args.symbol or "", args.config]
+    sys.argv = [sys.argv[0], str(args.usd), args.symbol or "", args.config, args.exchange or ""]
     verify_main()
 
 
@@ -209,11 +210,13 @@ def main() -> None:
 
     p_va = subparsers.add_parser("verify-account", help="Comprueba pares, saldo y comisión del exchange (no opera)")
     p_va.add_argument("--config", type=str, default="config.yaml", help="Fichero de configuración")
+    p_va.add_argument("--exchange", type=str, default=None, help="Otro exchange con la misma configuración (p. ej. myokx)")
     p_va.set_defaults(func=cmd_verify_account)
 
     p_vs = subparsers.add_parser("verify-stops", help="Prueba las órdenes de stop contra el exchange real (no opera)")
     p_vs.add_argument("--symbol", type=str, default=None, help="Par a usar (def: ETH contra la moneda de cotización)")
     p_vs.add_argument("--config", type=str, default="config.yaml", help="Fichero de configuración")
+    p_vs.add_argument("--exchange", type=str, default=None, help="Otro exchange con la misma configuración (p. ej. myokx)")
     p_vs.set_defaults(func=cmd_verify_stops)
 
     # verify-api
@@ -221,6 +224,7 @@ def main() -> None:
     p_ver.add_argument("--usd", type=float, default=1.0, help="Importe en USD (def: 1.0)")
     p_ver.add_argument("--symbol", type=str, default=None, help="Símbolo a usar (def: BTC contra la moneda de cotización)")
     p_ver.add_argument("--config", type=str, default="config.yaml", help="Fichero de configuración")
+    p_ver.add_argument("--exchange", type=str, default=None, help="Otro exchange con la misma configuración (p. ej. myokx)")
     p_ver.set_defaults(func=cmd_verify_api)
 
     # backtest

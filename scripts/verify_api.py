@@ -31,7 +31,8 @@ from tradebot.selfcheck import run_api_check  # noqa: E402
 
 def main() -> None:
     usd = float(sys.argv[1]) if len(sys.argv) > 1 else 1.0
-    config = load_config(sys.argv[3] if len(sys.argv) > 3 else "config.yaml", require_credentials=False)
+    config = load_config(sys.argv[3] if len(sys.argv) > 3 else "config.yaml", require_credentials=False,
+                         exchange=sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None)
     symbol = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else config.reference_symbol
     setup_logging(config.log_level)
     exchange = Exchange(config)

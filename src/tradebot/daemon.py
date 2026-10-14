@@ -340,6 +340,19 @@ def _wait_cycle(engine: Engine, interval: float, exit_poll_seconds: float, candl
             logger.warning("Sondeo rápido de salidas falló (%s); sigo con el siguiente", exc)
 
 
+def _execution_prices(engine: Engine, config: Config, symbols: list[str]) -> dict[str, float]:
+    """Con las señales de otro exchange: precios del exchange que opera, en una consulta
+    por ciclo, para decidir las salidas. Si falla, ese ciclo no evalúa salidas (el
+    sondeo rápido sigue a lo suyo)."""
+    if not config.signals_elsewhere:
+        return {}
+    try:
+        return engine.exchange.fetch_last_prices(symbols)
+    except Exception as exc:
+        logger.warning("No pude leer los precios de %s (%s); este ciclo no evalúa salidas", config.exchange_name, exc)
+        return {}
+
+
 def _adopt_positions(engine: Engine) -> None:
     """Readopta las posiciones persistidas. Un fallo cualquiera no impide arrancar,
     salvo que las posiciones sean de otro exchange: operar así las dejaría sin gestionar
@@ -548,6 +561,7 @@ def run_forever(
                 # Un ciclo sobre todo el universo (símbolos activos + posiciones abiertas pendientes).
                 open_symbols = [p.symbol for p in engine.positions]
                 loop_symbols = list(dict.fromkeys(symbols + open_symbols))
+                exec_prices = _execution_prices(engine, config, loop_symbols)
 
                 for symbol in loop_symbols:
                     try:
@@ -562,10 +576,13 @@ def run_forever(
                             continue
                         candles_cache[symbol] = candles
 
-                        # Actualizar siempre el precio en vivo y evaluar salidas continuas (SL/TP) en cada sondeo de 60s
-                        live_price = float(candles["close"].iloc[-1])
-                        engine.last_prices[symbol] = live_price
-                        engine._check_exits(symbol, live_price, candles=candles)
+                        # Actualizar siempre el precio en vivo y evaluar salidas continuas (SL/TP) en cada sondeo de 60s.
+                        # Con las señales de otro exchange, el precio es el del exchange que opera.
+                        live_price = (exec_prices.get(symbol) if config.signals_elsewhere
+                                      else float(candles["close"].iloc[-1]))
+                        if live_price:
+                            engine.last_prices[symbol] = live_price
+                            engine._check_exits(symbol, live_price, candles=candles)
 
                         # Decidir entradas solo sobre velas CERRADAS (descarta la vela en
                         # formación) y UNA vez por vela, como el backtest. Evita

@@ -6,6 +6,11 @@
 
 mode: live           # paper | live. El arranque en run.py confirma si live
 exchange: bybiteu
+# Fuente de las señales (opcional): exchange del que salen las velas para estrategias y filtros,
+# con su moneda de cotización. Las órdenes, los saldos y los precios de las salidas siguen
+# siendo los de `exchange`. Pensado para operar donde el volumen es bajo (ver DEPLOY.md, 11).
+# data_exchange: binance
+# data_quote: USDT
 
 timeframe: 4h          # por defecto 4h
 lookback: 300          # nº de velas a mantener para los indicadores
