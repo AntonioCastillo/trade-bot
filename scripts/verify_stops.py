@@ -54,9 +54,12 @@ def main() -> None:
 
     price = exchange.fetch_last_price(symbol)
     limits = exchange.market_limits(symbol)
-    amount = float(limits.get("min_amount") or 0) * 2
     trigger = price * 0.5
-    print(f"{symbol}: precio {price}, orden de prueba de {amount} con disparo en {trigger:.6f} (-50%: no se ejecutará)")
+    # La orden debe cumplir la cantidad mínima y también el importe mínimo del par
+    # (Bybit EU exige 5 USDC); el importe se mide con holgura al precio de disparo.
+    amount = max(float(limits.get("min_amount") or 0) * 2, float(limits.get("min_cost") or 0) * 1.5 / trigger)
+    print(f"{symbol}: precio {price}, orden de prueba de {amount:.8f} (≈{amount * price:.2f} al precio actual) "
+          f"con disparo en {trigger:.6f} (-50%: no se ejecutará)")
     if amount <= 0:
         print("No conozco la cantidad mínima de este par; prueba con otro --symbol")
         sys.exit(1)
