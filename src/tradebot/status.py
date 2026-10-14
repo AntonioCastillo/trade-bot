@@ -130,6 +130,7 @@ def build_status(engine, config) -> dict[str, Any]:
         "mode": config.mode,
         "exchange": config.exchange,
         "quote": config.risk.quote_currency,
+        "data_source": getattr(getattr(engine, "exchange", None), "active_data_source", None),
         "equity": equity,
         "closed_trades": s["trades"],
         "open_positions": open_positions,

@@ -47,7 +47,7 @@ def main() -> None:
     use_grid = not (len(sys.argv) > 2 and sys.argv[2] == "nogrid")
     n_splits = 2
 
-    config = load_config()
+    config = load_config(require_credentials=False)
     setup_logging("WARNING")
     exchange = Exchange(config)
 

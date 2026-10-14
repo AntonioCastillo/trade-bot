@@ -248,7 +248,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     args = parser.parse_args()
 
-    config: Config = load_config(args.config)
+    config: Config = load_config(args.config, require_credentials=False)
     heads: dict[str, list[Instrument]] = {}
     for ins in config.instruments:
         if ins.dynamic_rs_enabled:

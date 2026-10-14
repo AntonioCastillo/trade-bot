@@ -43,7 +43,7 @@ RISK_OVERRIDES = {
 
 
 def main() -> None:
-    config = load_config("config.yaml")
+    config = load_config("config.yaml", require_credentials=False)
     config.mode = "paper"
 
     db = Path(DB_PATH)

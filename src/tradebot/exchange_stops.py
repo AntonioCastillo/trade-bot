@@ -27,7 +27,9 @@ from .models import Position, Side
 
 logger = logging.getLogger(__name__)
 
-CLIENT_PREFIX = "tbstop-"
+# Prefijo del identificador de cliente de las órdenes del bot. Sin guion: OKX solo admite
+# letras y números. Las órdenes antiguas ("tbstop-…") siguen reconociéndose.
+CLIENT_PREFIX = "tbstop"
 GONE_RATIO = 0.05          # saldo real < 5% del registrado -> la posición ya no existe
 AMOUNT_TOLERANCE = 0.01    # reponer la orden si la cantidad cambió más de un 1%
 RETRY_SECONDS = 300.0      # tras un fallo al crear la orden, no reintentar antes de esto
@@ -160,10 +162,18 @@ class StopGuard:
             n += bool(self._cancel(order_id, symbol))
         return n
 
+    def _held(self, base: str) -> float:
+        """Saldo TOTAL de la moneda (libre + bloqueado): si el exchange bloquea el saldo
+        mientras la orden de stop está viva, el libre saldría 0 aunque la moneda siga ahí."""
+        total = getattr(self.exchange, "fetch_balances_total", None)
+        if callable(total):
+            return float(total().get(base, 0.0))
+        return float(self.exchange.fetch_balance(base))
+
     def position_gone(self, pos: Position) -> bool | None:
         """¿Ya no está el activo en la cuenta? None si no se pudo consultar."""
         try:
-            real = float(self.exchange.fetch_balance(pos.symbol.split("/")[0]))
+            real = self._held(pos.symbol.split("/")[0])
         except Exception as exc:
             logger.warning("[%s] No pude leer el saldo para comprobar el stop del exchange (%s)", pos.symbol, exc)
             return None
