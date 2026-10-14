@@ -5,7 +5,7 @@ orden. Después vienen `verify-api` (compra y venta real de ~1) y `verify-stops`
 
 Uso:
     python scripts/verify_account.py                              # config.yaml
-    python scripts/verify_account.py --config config.bybiteu.yaml
+    python scripts/verify_account.py --config otra_config.yaml
 """
 
 from __future__ import annotations
@@ -28,9 +28,10 @@ from tradebot.exchange import Exchange  # noqa: E402
 def main() -> None:
     parser = argparse.ArgumentParser(description="Comprueba la cuenta del exchange sin operar")
     parser.add_argument("--config", default="config.yaml", help="Fichero de configuración (def: config.yaml)")
+    parser.add_argument("--exchange", default=None, help="Otro exchange con la misma configuración (p. ej. myokx)")
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    config = load_config(args.config, require_credentials=False, exchange=args.exchange)
     quote = config.risk.quote_currency
     exchange = Exchange(config)
     ok = True
@@ -52,10 +53,24 @@ def main() -> None:
         available = set()
     try:
         price = exchange.fetch_last_price(config.reference_symbol)
-        candles = exchange.fetch_ohlcv(config.reference_symbol, "1d", limit=config.lookback)
-        step(f"precio y velas de {config.reference_symbol}", price > 0 and len(candles) > 50, f"{price} y {len(candles)} velas diarias")
+        step(f"precio de {config.reference_symbol}", price > 0, str(price))
     except Exception as exc:
-        step(f"precio y velas de {config.reference_symbol}", False, f"{type(exc).__name__}: {exc}")
+        step(f"precio de {config.reference_symbol}", False, f"{type(exc).__name__}: {exc}")
+    source = (f"{config.data_exchange} ({config.data_symbol(config.reference_symbol)})"
+              if config.signals_elsewhere else config.exchange_name)
+    try:
+        candles = exchange.fetch_ohlcv(config.reference_symbol, "1d", limit=config.lookback)
+        step(f"velas de las señales: {source}", len(candles) > 50, f"{len(candles)} velas diarias")
+    except Exception as exc:
+        step(f"velas de las señales: {source}", False, f"{type(exc).__name__}: {exc}")
+    if exchange._fallback is not None:
+        name, client, fb_quote, _ = exchange._fallback
+        pair = f"{config.reference_symbol.split('/')[0]}/{fb_quote}"
+        try:
+            rows = client.fetch_ohlcv(pair, "1d", limit=config.lookback)
+            step(f"velas de respaldo: {name} ({pair})", len(rows) > 50, f"{len(rows)} velas diarias")
+        except Exception as exc:
+            step(f"velas de respaldo: {name} ({pair})", False, f"{type(exc).__name__}: {exc}")
     for symbol in config.symbols():
         if symbol not in available:
             continue

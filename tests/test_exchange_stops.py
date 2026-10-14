@@ -339,6 +339,7 @@ def test_unknown_state_waits_instead_of_selling_blind():
         raise ConnectionError("sin red")
 
     engine.exchange.fetch_balance = no_balance                           # …y no se puede leer el saldo
+    engine.exchange.fetch_balances_total = lambda: no_balance(None)
     engine.process(SYMBOL, _candles(0.90))
 
     assert len(engine.positions) == 1 and engine.execution.sells == 0    # ni vende ni la da por cerrada

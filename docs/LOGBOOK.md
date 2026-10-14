@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-14 | Señales de Otro Exchange y Soporte de OKX Europa (Preparado, sin Activar)](#2026-10-14--señales-de-otro-exchange-y-soporte-de-okx-europa-preparado-sin-activar)
 * [2026-10-14 | Bybit EU: la Cuenta Paga un 0,25% de Comisión](#2026-10-14--bybit-eu-la-cuenta-paga-un-025-de-comisión)
 * [2026-10-13 | Ventas por Precios que no Existieron: Filtro de Tickers y Confirmación con el Libro](#2026-10-13--ventas-por-precios-que-no-existieron-filtro-de-tickers-y-confirmación-con-el-libro)
 * [2026-10-13 | Exchange Configurable: Soporte de Bybit EU para Migrar desde KuCoin](#2026-10-13--exchange-configurable-soporte-de-bybit-eu-para-migrar-desde-kucoin)
@@ -24,6 +25,38 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-14 | Señales de Otro Exchange y Soporte de OKX Europa (Preparado, sin Activar)
+
+* **Organización:** es todo el código para cambiar de exchange, sin cambiar de exchange: `config.yaml` sigue en KuCoin. El operador decidirá entre Bybit EU y OKX Europa según la comisión que confirme OKX; el cambio será un PR solo de configuración, el día que se mueva el saldo.
+
+* **Archivos Afectados:** [`src/tradebot/config.py`](../src/tradebot/config.py), [`src/tradebot/exchange.py`](../src/tradebot/exchange.py), [`src/tradebot/exchange_stops.py`](../src/tradebot/exchange_stops.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`src/tradebot/daemon.py`](../src/tradebot/daemon.py), [`scripts/livesim.py`](../scripts/livesim.py), scripts de verificación, [`tests/test_signal_source.py`](../tests/test_signal_source.py), [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)
+* **Motivo:** OKX Europa cobra menos que Bybit EU al contado (tabla oficial para el EEE, nivel Regular, a mercado: 0,10% con la cuenta de derivados X-Perps abierta y 0,20% sin ella), pero su volumen en USDC es del 0,1–3% del de KuCoin. Con sus propias velas, de enero a octubre de 2026, el bot daba +1,8% (caída máx. 20%) al 0,10%, frente a +9,6% en KuCoin y +10,2% en Bybit EU: `volumen_explosivo` entraba 135 veces en vez de 46, por picos de volumen que en un mercado tan fino no significan nada. Tomando las señales de las velas de KuCoin y ejecutando en OKX, el mismo periodo da +10,5%. El operador pidió preparar el bot para operar en OKX mirando el volumen de otro exchange.
+* **Validación de Binance como fuente de señales** (desde 2022, 17 monedas sin ETC, ejecución con los precios de KuCoin como sustituto, porque OKX y Bybit EU solo tienen historia desde octubre de 2025):
+
+  | Comisión | Señales de KuCoin | Señales de Binance |
+  |---|---:|---:|
+  | 0,10% | +181,8% | +165,3% |
+  | 0,20% | +154,3% | +138,9% |
+  | 0,25% | +141,5% | +126,6% |
+
+  Caída máxima parecida (11–14%). Las entradas de `tendencia_alcista` coinciden 73 de 74 y las de `capitulacion` 8 de 9; las de `volumen_explosivo`, 157 de 289: el volumen de Binance es unas 8 veces el de KuCoin y sus picos se parecen (correlación 0,73–0,87), pero no son los mismos. Con Binance, la cabeza de volumen sigue ganando (+83 puntos frente a +92): su ventaja no es un artefacto de KuCoin. Por años, Binance sale mejor en 2023 y 2025 y peor en 2024.
+* **Cambios Implementados:**
+  1. **Fuente de señales (`data_exchange`, `data_quote`):** las velas de estrategias y filtros (macro de BTC, tendencia de la moneda, fuerza relativa) salen de ese exchange, solo con datos públicos y su par equivalente (NEAR/USDC → NEAR/USDT). Las órdenes, los saldos, los tickers y el libro siguen en `exchange`.
+  2. **Salidas con el precio del exchange que opera:** con la fuente separada, el ciclo de 60 s pide los precios de `exchange` en una consulta y el motor no decide salidas con el cierre de la vela de la otra fuente. Si esa consulta falla, ese ciclo no evalúa salidas (el sondeo rápido sigue).
+  3. **OKX Europa (`exchange: myokx`):** claves `OKX_API_KEY`, `OKX_API_SECRET` y `OKX_API_PASSPHRASE`; órdenes de stop como orden algo `conditional` a mercado; listado con `ordType: conditional`; la cancelación lee el resultado dentro de la respuesta (OKX no lanza error si la orden ya no existe).
+  4. **Identificador de las órdenes de stop sin guion** (`tbstop…`): OKX solo admite letras y números. Las órdenes antiguas (`tbstop-…`) se siguen reconociendo.
+  5. **`position_gone` mira el saldo total** (libre + bloqueado): si un exchange bloquea la moneda mientras vive la orden de stop, el libre sale 0 y la posición se habría dado por vendida.
+  6. **Verificaciones contra otro exchange** con la misma configuración: `manage.py verify-account|verify-api|verify-stops --exchange myokx`.
+  7. **`livesim.py --signal-exchange binance --signal-quote USDT`** (o `data_exchange` en la configuración): simula con las señales de otra fuente. Reproduce el resultado del estudio de octubre.
+  8. **Herramientas que no operan sin claves:** `load_config(..., require_credentials=False)` en simulaciones, análisis y verificaciones (que ya avisan si faltan claves): pueden cargar una configuración en real sin las claves de su exchange. El bot en real sigue exigiéndolas.
+  9. **`livesim.py --exchange kucoin --quote USDT`:** simular con las velas de otro exchange; hace falta para estudios largos con Bybit EU u OKX, que solo tienen historia desde octubre de 2025.
+  10. **Respaldo automático de la fuente** (`data_fallback_exchange`, `data_fallback_quote`), pedido por el operador: KuCoin como principal y Binance de respaldo. Si la principal falla 3 veces seguidas (no cuenta un par que no exista en ella), las velas salen del respaldo durante 30 minutos y después se vuelve a probar la principal. Cada llamada usa una sola fuente, así que una ventana de velas nunca mezcla exchanges. Aviso por Telegram en cada cambio y `data_source` en el gist. Si fallan las dos, ese ciclo no tiene velas: no hay entradas nuevas y las salidas siguen con los precios del exchange que opera.
+* **Estado:** preparado, sin activar. `config.yaml` sigue en KuCoin sin fuente separada. Contra la API pública de OKX funcionan pares, precios, libro y velas; con Binance como fuente, las velas de NEAR/USDC salen de NEAR/USDT. **Sin probar:** todo lo que necesita claves de OKX (saldo, órdenes, comisión real y, sobre todo, sus órdenes de stop).
+* **Lectura:** con X-Perps (0,10%) y señales de Binance, ≈ +165% desde 2022 frente a ≈ +141% en Bybit EU al 0,25% (señales de KuCoin como sustituto de las suyas). Sin X-Perps (0,20%), OKX con señales de Binance (+139%) no mejora a Bybit EU.
+* **Verificación:** 388 tests pasando (16 nuevos en `tests/test_signal_source.py` y 8 en `tests/test_signal_failover.py`). Con datos reales: con KuCoin respondiendo, las velas de NEAR/USDC salen de NEAR/USDT en KuCoin; simulando su caída, al tercer fallo salen de Binance.
 
 ---
 

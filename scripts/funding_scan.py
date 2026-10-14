@@ -34,7 +34,7 @@ PERPS = ["BTC/USDT:USDT", "ETH/USDT:USDT", "XRP/USDT:USDT",
 
 def main() -> None:
     total = int(sys.argv[1]) if len(sys.argv) > 1 else 1095
-    config = load_config()
+    config = load_config(require_credentials=False)
     setup_logging("WARNING")
     exchange = Exchange(config)
 

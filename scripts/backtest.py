@@ -44,7 +44,7 @@ def main() -> None:
                 limit = int(arg)
             except ValueError:
                 pass
-    config = load_config(config_path)
+    config = load_config(config_path, require_credentials=False)
     config.mode = "paper"
     setup_logging("WARNING")
 

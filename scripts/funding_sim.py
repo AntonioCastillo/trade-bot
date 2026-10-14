@@ -41,7 +41,7 @@ def _perp_ohlcv(fut, symbol, total=300):
 
 
 def main() -> None:
-    config = load_config()
+    config = load_config(require_credentials=False)
     setup_logging("WARNING")
     exchange = Exchange(config)
     fut = ccxt.kucoinfutures({"enableRateLimit": True})

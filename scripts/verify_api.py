@@ -3,7 +3,7 @@
 Uso:
     python scripts/verify_api.py             # 1 en BTC contra la moneda de cotización
     python scripts/verify_api.py 1 XRP/USDT  # importe y símbolo
-    python scripts/verify_api.py 5 BTC/USDC config.bybiteu.yaml   # otra configuración
+    python scripts/verify_api.py 5 BTC/USDC otra_config.yaml   # otra configuración
 
 Sin claves en .env, o sin confirmar, funciona en DRY-RUN (no opera): solo
 muestra el plan y comprueba precio, mínimo y saldo. Para ejecutar de verdad
@@ -31,7 +31,8 @@ from tradebot.selfcheck import run_api_check  # noqa: E402
 
 def main() -> None:
     usd = float(sys.argv[1]) if len(sys.argv) > 1 else 1.0
-    config = load_config(sys.argv[3] if len(sys.argv) > 3 else "config.yaml")
+    config = load_config(sys.argv[3] if len(sys.argv) > 3 else "config.yaml", require_credentials=False,
+                         exchange=sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None)
     symbol = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else config.reference_symbol
     setup_logging(config.log_level)
     exchange = Exchange(config)

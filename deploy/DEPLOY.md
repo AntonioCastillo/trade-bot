@@ -259,6 +259,52 @@ automático vuelve a la versión anterior. Mientras tanto llegarán varios aviso
 de cada exchange. En Bybit EU, de enero a octubre de 2026, solo 14 de sus 44 entradas
 coincidieron con las de KuCoin; el resultado fue parecido, pero son nueve meses.
 
+## 11. OKX Europa con señales de otro exchange (preparado, sin activar)
+
+OKX Europa cobra menos que Bybit EU (al contado, a mercado: 0,10% con la cuenta de derivados
+X-Perps abierta, 0,20% sin ella), pero su volumen en USDC es muy bajo y las cabezas que miran
+el volumen (`volumen_explosivo`, `capitulacion`) ven picos donde no los hay. Por eso el bot
+puede sacar las velas de las señales de un mercado líquido (`data_exchange`, solo datos
+públicos) y operar en OKX: órdenes, saldos y precios de las salidas siguen siendo de OKX.
+
+### Verificar la cuenta (sin tocar el bot real)
+1. Abrir la cuenta en OKX Europa y, si se quiere el 0,10%, la cuenta de derivados X-Perps
+   (pide un test de conveniencia). El bot no opera derivados.
+2. Clave de API con **lectura y trading, sin retirada**, limitada a la IP del VPS. OKX pide
+   además una passphrase que eliges al crearla. En `.env`:
+   `OKX_API_KEY=...`, `OKX_API_SECRET=...` y `OKX_API_PASSPHRASE=...`.
+3. Las tres verificaciones, con la configuración en USDC de Bybit pero contra OKX:
+   ```bash
+   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-account --config config.bybiteu.yaml --exchange myokx
+   ```
+   ```bash
+   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-api --usd 10 --config config.bybiteu.yaml --exchange myokx
+   ```
+   ```bash
+   cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-stops --config config.bybiteu.yaml --exchange myokx
+   ```
+   `verify-account` compara la comisión con la de `config.bybiteu.yaml` (0,25%): para OKX lo
+   que importa es el número que muestra. Las órdenes de stop de OKX son de otro tipo (algo
+   "conditional") y no se han probado en real: si `verify-stops` falla, hay que corregir el
+   código antes de seguir.
+
+### El cambio
+Igual que en la sección 10 (pausar, cerrar posiciones, mover el saldo), con un PR solo de
+configuración: `config.yaml` en USDC con `exchange: myokx`, `engine.fee_pct` con la comisión
+que muestre `verify-account`, y la fuente de señales con su respaldo:
+```yaml
+data_exchange: kucoin            # principal: con la que se ajustó la configuración
+data_quote: USDT
+data_fallback_exchange: binance  # si KuCoin deja de responder
+data_fallback_quote: USDT
+```
+Si KuCoin falla 3 veces seguidas, las velas salen de Binance durante 30 minutos y luego se
+vuelve a probar KuCoin; llega un aviso por Telegram en cada cambio y el gist muestra la fuente
+activa (`data_source`). Cambiar de fuente cambia algunas señales (en `volumen_explosivo`,
+aproximadamente la mitad de las compras); las ventas no dependen de la fuente.
+
+**Simular antes:** `python scripts/livesim.py --config config.bybiteu.yaml --exchange myokx --combined --signal-exchange kucoin --signal-quote USDT`.
+
 ## Notas
 - **Firewall:** no requiere puertos entrantes; solo HTTPS saliente (por defecto OK).
 - **Reloj:** `chronyd` queda activo; el bot además ajusta la diferencia con el exchange.
