@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-15 | El Bot Pasa a Operar en OKX Europa](#2026-10-15--el-bot-pasa-a-operar-en-okx-europa)
 * [2026-10-15 | OKX: Órdenes de Stop en Modo Contado](#2026-10-15--okx-órdenes-de-stop-en-modo-contado)
 * [2026-10-15 | Preparado para Comprobar la Comisión de OKX Europa](#2026-10-15--preparado-para-comprobar-la-comisión-de-okx-europa)
 * [2026-10-14 | Señales de Otro Exchange y Soporte de OKX Europa (Preparado, sin Activar)](#2026-10-14--señales-de-otro-exchange-y-soporte-de-okx-europa-preparado-sin-activar)
@@ -27,6 +28,19 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-15 | El Bot Pasa a Operar en OKX Europa
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml), `config.okx.yaml` (eliminado), [`tests/test_okx_config.py`](../tests/test_okx_config.py), [`tests/test_bybit_eu.py`](../tests/test_bybit_eu.py), [`deploy/DEPLOY.md`](../deploy/DEPLOY.md), [`.env.example`](../.env.example), [`README.md`](../README.md)
+* **Motivo:** KuCoin global no puede dar servicio en España desde el fin del transitorio de MiCA. De los destinos con licencia europea, OKX Europa quedó verificado de punta a punta con la cuenta real el 2026-10-15: comisión 0,100% a mercado y 0,080% limitada en los 17 pares (con la cuenta de derivados X-Perps abierta), cuenta, compra y venta real de 10 USDC, y órdenes de stop siete de siete. Simulado desde 2022 con señales de KuCoin: ≈ +182%, frente a ≈ +142% en Bybit EU al 0,25%.
+* **Cambios Implementados:**
+  1. `config.yaml` pasa a ser la configuración de OKX Europa en real: USDC, sin ETC, comisión 0,10%, señales de KuCoin con Binance de respaldo y stops de emergencia del exchange activos. Desaparece `config.okx.yaml`.
+  2. `config.bybiteu.yaml` se queda como alternativa verificada; un test vigila que siga alineada con `config.yaml`.
+  3. `.env.example`, README y `deploy/DEPLOY.md` (secciones 10 y 11) con las claves de OKX, su lista de IP (IPv4 e IPv6) y cómo volver a Bybit si hiciera falta.
+* **Cuándo se fusiona:** con el bot sin posiciones en KuCoin (lo está desde el 15-oct) y el saldo ya en OKX. Si quedaran posiciones en USDT, el bot no arranca y el despliegue vuelve atrás solo. Antes conviene fusionar el ajuste de las ventas con la moneda bloqueada (PR #15).
+* **Verificación:** 393 tests pasando en la rama.
 
 ---
 
