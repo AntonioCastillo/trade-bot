@@ -33,6 +33,11 @@ CLIENT_PREFIX = "tbstop"
 GONE_RATIO = 0.05          # saldo real < 5% del registrado -> la posición ya no existe
 AMOUNT_TOLERANCE = 0.01    # reponer la orden si la cantidad cambió más de un 1%
 RETRY_SECONDS = 300.0      # tras un fallo al crear la orden, no reintentar antes de esto
+# Exchanges que bloquean la moneda (OKX): intentos de cancelar antes de vender, y espera
+# máxima a que el saldo quede libre tras cancelar.
+LOCKED_CANCEL_ATTEMPTS = 3
+LOCKED_RELEASE_WAIT = 2.0
+LOCKED_POLL = 0.5
 
 
 class StopGuard:
@@ -133,15 +138,53 @@ class StopGuard:
         haberse ejecutado) o 'error' (no se pudo hablar con el exchange)."""
         if not self.enabled or not pos.stop_order_id:
             return "none"
-        try:
-            cancelled = bool(self.exchange.cancel_stop_order(pos.stop_order_id, pos.symbol))
-        except Exception as exc:
-            logger.warning("[%s] No pude cancelar la orden de stop %s (%s)", pos.symbol, pos.stop_order_id, exc)
-            return "error"
+        # Si el exchange bloquea la moneda, sin cancelar la orden el bot no puede vender
+        # (o vendería solo lo no bloqueado): merece la pena insistir un poco.
+        attempts = LOCKED_CANCEL_ATTEMPTS if self.locks_balance else 1
+        for attempt in range(1, attempts + 1):
+            try:
+                cancelled = bool(self.exchange.cancel_stop_order(pos.stop_order_id, pos.symbol))
+                break
+            except Exception as exc:
+                logger.warning("[%s] No pude cancelar la orden de stop %s (%s)%s", pos.symbol, pos.stop_order_id, exc,
+                               f"; intento {attempt}/{attempts}" if attempts > 1 else "")
+                if attempt == attempts:
+                    return "error"
+                self._sleep(LOCKED_POLL)
         if cancelled:
             pos.stop_order_id, pos.stop_order_price, pos.stop_order_amount = "", 0.0, 0.0
             return "cancelled"
         return "missing"
+
+    @property
+    def locks_balance(self) -> bool:
+        """¿El exchange bloquea la moneda mientras vive la orden de stop? (OKX sí)."""
+        return bool(getattr(self.exchange, "stop_needs_balance", False))
+
+    @staticmethod
+    def _sleep(seconds: float) -> None:
+        time.sleep(seconds)
+
+    def wait_until_free(self, pos: Position) -> bool:
+        """Tras cancelar la orden en un exchange que bloquea la moneda, espera (poco) a que
+        el saldo vuelva a estar libre: si no, la venta del bot solo vendería la parte libre.
+        True si ya está libre (o el exchange no bloquea)."""
+        if not self.locks_balance:
+            return True
+        base = pos.symbol.split("/")[0]
+        waited = 0.0
+        while True:
+            try:
+                if float(self.exchange.fetch_balance(base)) >= pos.amount * (1 - AMOUNT_TOLERANCE):
+                    return True
+            except Exception as exc:
+                logger.warning("[%s] No pude leer el saldo libre tras cancelar la orden de stop (%s)", pos.symbol, exc)
+            if waited >= LOCKED_RELEASE_WAIT:
+                logger.warning("[%s] El saldo sigue bloqueado %.1f s después de cancelar la orden de stop; vendo lo libre",
+                               pos.symbol, waited)
+                return False
+            self._sleep(LOCKED_POLL)
+            waited += LOCKED_POLL
 
     def _cancel(self, order_id: str, symbol: str) -> bool:
         try:

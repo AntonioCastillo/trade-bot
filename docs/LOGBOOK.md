@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-15 | Ventas del Bot cuando el Exchange Bloquea la Moneda (OKX)](#2026-10-15--ventas-del-bot-cuando-el-exchange-bloquea-la-moneda-okx)
 * [2026-10-15 | OKX: Órdenes de Stop en Modo Contado](#2026-10-15--okx-órdenes-de-stop-en-modo-contado)
 * [2026-10-15 | Preparado para Comprobar la Comisión de OKX Europa](#2026-10-15--preparado-para-comprobar-la-comisión-de-okx-europa)
 * [2026-10-14 | Señales de Otro Exchange y Soporte de OKX Europa (Preparado, sin Activar)](#2026-10-14--señales-de-otro-exchange-y-soporte-de-okx-europa-preparado-sin-activar)
@@ -27,6 +28,19 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-15 | Ventas del Bot cuando el Exchange Bloquea la Moneda (OKX)
+
+* **Archivos Afectados:** [`src/tradebot/exchange_stops.py`](../src/tradebot/exchange_stops.py), [`src/tradebot/engine.py`](../src/tradebot/engine.py), [`tests/test_signal_source.py`](../tests/test_signal_source.py)
+* **Qué se vio:** `verify-stops --config config.okx.yaml` pasó las siete comprobaciones con la cuenta real (15-oct), y confirmó que **OKX bloquea la moneda mientras vive la orden de stop**: de 0,00245654 ETH quedaron libres 0,00045654 con la orden de 0,002 viva. El bot cancela su orden antes de vender, pero si esa cancelación fallaba seguía adelante ("vender es lo prioritario"), algo pensado para KuCoin y Bybit, que no bloquean. En OKX solo habría vendido la parte libre.
+* **Cambios Implementados (solo en exchanges que bloquean, hoy OKX):**
+  1. Antes de vender se intenta cancelar la orden hasta 3 veces, con medio segundo entre intentos.
+  2. Si no se consigue, **no vende en ese sondeo** y lo reintenta en el siguiente. Mientras, la orden del exchange sigue viva y protegiendo, un 2% por debajo del stop del bot.
+  3. Tras cancelar, espera hasta 2 segundos a que el saldo quede libre antes de vender. Si sigue bloqueado, vende lo libre y lo deja en el log.
+* **En KuCoin y Bybit no cambia nada:** un intento de cancelar y, si falla, vende igualmente.
+* **Verificación:** 399 tests pasando (6 nuevos).
 
 ---
 

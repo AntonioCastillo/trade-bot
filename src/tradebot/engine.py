@@ -813,12 +813,19 @@ class Engine:
         status = guard.release(pos)
         if status == "cancelled":
             self.storage.update_stop_order(pos)
+            guard.wait_until_free(pos)                # en OKX la moneda estaba bloqueada por la orden
             return False
         gone = guard.position_gone(pos)
         if gone:
             self._finish_exchange_stop(pos)           # el activo no está: lo vendió el exchange
             return True
         if status == "error":
+            if guard.locks_balance:
+                # La orden sigue viva y tiene la moneda bloqueada: el bot no puede venderla.
+                # Se reintenta en el siguiente sondeo; mientras, esa orden sigue protegiendo.
+                logger.warning("[%s] No vendo todavía: la orden de stop %s sigue viva y bloquea la moneda; "
+                               "reintento en el siguiente sondeo", pos.symbol, pos.stop_order_id)
+                return None
             # No se pudo cancelar: vender es lo prioritario. Si la orden sigue viva, se
             # cancelará como huérfana en el siguiente ciclo (el exchange no bloquea el saldo).
             return False
