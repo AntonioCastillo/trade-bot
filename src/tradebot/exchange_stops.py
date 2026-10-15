@@ -70,6 +70,17 @@ class StopGuard:
         if time.monotonic() < self._retry_after.get(pos.symbol, 0.0):
             return False                              # falló hace poco: no se insiste en cada sondeo
         price = self.target_price(pos)
+        if pos.stop_order_id and getattr(self.exchange, "stop_needs_balance", False):
+            # Si el exchange exige (y bloquea) la moneda para la orden, la nueva no cabe mientras
+            # viva la vieja: aquí se retira primero. Unos instantes sin orden; sigue el stop del bot.
+            try:
+                self.exchange.cancel_stop_order(pos.stop_order_id, pos.symbol)
+            except Exception as exc:
+                self._retry_after[pos.symbol] = time.monotonic() + RETRY_SECONDS
+                logger.warning("[%s] No pude retirar la orden de stop %s para reponerla (%s); sigue la anterior",
+                               pos.symbol, pos.stop_order_id, exc)
+                return False
+            pos.stop_order_id, pos.stop_order_price, pos.stop_order_amount = "", 0.0, 0.0
         amount = self._sellable_amount(pos)
         try:
             order = self.exchange.create_stop_sell(pos.symbol, amount, price, CLIENT_PREFIX + uuid.uuid4().hex[:24])
@@ -79,7 +90,7 @@ class StopGuard:
             self._failing[pos.symbol] = (since, str(exc))
             logger.warning("[%s] No pude poner el stop de emergencia en el exchange (%s); sigue el stop del bot "
                            "y lo reintento en %d min", pos.symbol, exc, RETRY_SECONDS // 60)
-            return False
+            return pos.stop_order_id == ""          # True si se retiró la anterior: hay que guardarlo
         self._retry_after.pop(pos.symbol, None)
         self._failing.pop(pos.symbol, None)
         old = pos.stop_order_id

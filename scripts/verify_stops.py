@@ -64,6 +64,14 @@ def main() -> None:
     if amount <= 0:
         print("No conozco la cantidad mínima de este par; prueba con otro --symbol")
         sys.exit(1)
+    base = symbol.split("/")[0]
+    held = float(exchange.fetch_balances_total().get(base, 0.0))
+    if exchange.stop_needs_balance and held < amount:
+        print(f"\n{config.exchange_name} solo acepta la orden de stop si tienes la moneda: hacen falta al menos "
+              f"{amount:.8f} {base} (≈{amount * price:.2f}) y tienes {held:.8f}.")
+        print(f"Compra un poco más de esa cantidad de {base} en {config.exchange_name} (la comisión de compra se cobra "
+              f"en {base}) y repite; o usa --symbol con una moneda que ya tengas.")
+        sys.exit(1)
 
     client_id = CLIENT_PREFIX + "verify" + uuid.uuid4().hex[:16]            # 28 caracteres, sin guiones
     order_id = None
@@ -73,6 +81,12 @@ def main() -> None:
         step("crear la orden de stop", bool(order_id), f"id {order_id}, disparo {order['trigger_price']}, cantidad {order['amount']}")
         if not order_id:
             return
+        if held > 0:
+            time.sleep(1.0)
+            free = float(exchange.fetch_balance(base))
+            locked = held - free
+            print(f"  [INFO] saldo de {base}: total {held:.8f}, libre con la orden viva {free:.8f}"
+                  + (f" -> el exchange BLOQUEA {locked:.8f} mientras vive la orden" if locked > amount * 0.5 else " -> no lo bloquea"))
 
         found = None
         for _ in range(5):                       # el listado puede tardar un instante
