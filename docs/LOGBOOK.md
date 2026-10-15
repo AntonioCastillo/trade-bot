@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-15 | Preparado para Comprobar la Comisión de OKX Europa](#2026-10-15--preparado-para-comprobar-la-comisión-de-okx-europa)
 * [2026-10-14 | Señales de Otro Exchange y Soporte de OKX Europa (Preparado, sin Activar)](#2026-10-14--señales-de-otro-exchange-y-soporte-de-okx-europa-preparado-sin-activar)
 * [2026-10-14 | Bybit EU: la Cuenta Paga un 0,25% de Comisión](#2026-10-14--bybit-eu-la-cuenta-paga-un-025-de-comisión)
 * [2026-10-13 | Ventas por Precios que no Existieron: Filtro de Tickers y Confirmación con el Libro](#2026-10-13--ventas-por-precios-que-no-existieron-filtro-de-tickers-y-confirmación-con-el-libro)
@@ -25,6 +26,18 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-15 | Preparado para Comprobar la Comisión de OKX Europa
+
+* **Archivos Afectados:** [`config.okx.yaml`](../config.okx.yaml), [`scripts/check_fees.py`](../scripts/check_fees.py), [`scripts/manage.py`](../scripts/manage.py), [`tests/test_okx_config.py`](../tests/test_okx_config.py), [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)
+* **Motivo:** el operador elegirá entre Bybit EU (0,25%, comprobado) y OKX Europa según la comisión que OKX le cobre de verdad. Por su tabla, al contado y a mercado: 0,10% con la cuenta de derivados X-Perps abierta y 0,20% sin ella. Las vías ya existentes (`verify-account --exchange myokx`) comparaban con la comisión de Bybit y no mostraban el detalle por par.
+* **Cambios Implementados:**
+  1. **`config.okx.yaml`** (en simulado): la configuración de Bybit EU con `exchange: myokx`, señales de KuCoin con Binance de respaldo y `fee_pct: 0.0010`, la esperada con X-Perps. Un test vigila que no se desvíe de `config.bybiteu.yaml`.
+  2. **`manage.py fees`** (no opera): comisión de la cuenta, a mercado y con orden limitada, en cada par, comparada con KuCoin (0,10%) y Bybit EU (0,25%) y con la de la configuración.
+  3. Sección 11 de `deploy/DEPLOY.md`: cómo activar X-Perps, la comprobación de comisiones y las verificaciones con `--config config.okx.yaml`.
+* **Qué decide el número:** con 0,10% y señales de KuCoin, la simulación desde 2022 da ≈ +182% (≈ +165% si las señales salen de Binance), frente a ≈ +142% en Bybit EU al 0,25%. Con 0,20%, ≈ +154%: algo mejor que Bybit, pero con más trabajo y menos probado.
 
 ---
 
