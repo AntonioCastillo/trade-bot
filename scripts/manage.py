@@ -13,6 +13,7 @@ Uso:
     python scripts/manage.py resume CABEZA               # levanta la pausa manual y la de strikes
     python scripts/manage.py pauses                      # qué cabezas están en pausa
     python scripts/manage.py verify-account [--config F] # pares, saldo y comisión del exchange (no opera)
+    python scripts/manage.py fees [--config F] [--exchange X] # comisión real de tu cuenta en cada par (no opera)
     python scripts/manage.py verify-stops [--symbol PAR] [--config F] # prueba las órdenes de stop (no opera)
     python scripts/manage.py verify-api [--usd USD] [--symbol SYMBOL]
     python scripts/manage.py backtest [--limit N] [--config PATH]
@@ -138,6 +139,12 @@ def cmd_pauses(args: argparse.Namespace) -> None:
         print(f"{head}: " + ("; ".join(pauses[head]) if head in pauses else "operando"))
 
 
+def cmd_fees(args: argparse.Namespace) -> None:
+    from check_fees import main as check_fees_main
+    sys.argv = [sys.argv[0], "--config", args.config] + (["--exchange", args.exchange] if args.exchange else [])
+    check_fees_main()
+
+
 def cmd_verify_account(args: argparse.Namespace) -> None:
     from verify_account import main as verify_account_main
     sys.argv = [sys.argv[0], "--config", args.config] + (["--exchange", args.exchange] if args.exchange else [])
@@ -207,6 +214,11 @@ def main() -> None:
 
     p_pauses = subparsers.add_parser("pauses", help="Lista las cabezas en pausa")
     p_pauses.set_defaults(func=cmd_pauses)
+
+    p_fees = subparsers.add_parser("fees", help="Comisión real de tu cuenta en cada par (no opera)")
+    p_fees.add_argument("--config", type=str, default="config.yaml", help="Fichero de configuración")
+    p_fees.add_argument("--exchange", type=str, default=None, help="Otro exchange con la misma configuración (p. ej. myokx)")
+    p_fees.set_defaults(func=cmd_fees)
 
     p_va = subparsers.add_parser("verify-account", help="Comprueba pares, saldo y comisión del exchange (no opera)")
     p_va.add_argument("--config", type=str, default="config.yaml", help="Fichero de configuración")
