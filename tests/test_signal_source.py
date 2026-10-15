@@ -321,3 +321,77 @@ def test_exchanges_that_do_not_lock_keep_creating_before_cancelling():
     pos.stop_loss = 4.90
     guard.sync(pos)
     assert pos.stop_order_id == "s2" and list(exchange.orders) == ["s2"]
+
+
+# --- ventas del bot cuando el exchange bloquea la moneda -----------------------------------------
+
+def _locked_guard(monkeypatch, fails=0):
+    exchange = LockingExchange()
+    guard = StopGuard(exchange, buffer_pct=0.02, min_move_pct=0.005)
+    monkeypatch.setattr(StopGuard, "_sleep", staticmethod(lambda s: None))
+    pos = _pos()
+    guard.sync(pos)
+    calls = {"n": 0}
+    real_cancel = exchange.cancel_stop_order
+
+    def flaky_cancel(order_id, symbol):
+        calls["n"] += 1
+        if calls["n"] <= fails:
+            raise ccxt.NetworkError("sin red")
+        return real_cancel(order_id, symbol)
+
+    exchange.cancel_stop_order = flaky_cancel
+    return guard, exchange, pos, calls
+
+
+def test_release_insists_when_the_coin_is_locked(monkeypatch):
+    guard, exchange, pos, calls = _locked_guard(monkeypatch, fails=2)
+    assert guard.release(pos) == "cancelled" and calls["n"] == 3
+    assert exchange.fetch_balance("NEAR") == pytest.approx(21.95)           # la moneda vuelve a estar libre
+
+
+def test_release_gives_up_after_a_few_attempts(monkeypatch):
+    guard, _, pos, calls = _locked_guard(monkeypatch, fails=99)
+    assert guard.release(pos) == "error" and calls["n"] == 3
+
+
+def test_release_does_not_insist_on_exchanges_that_do_not_lock(monkeypatch):
+    guard, exchange, pos, calls = _locked_guard(monkeypatch, fails=99)
+    exchange.stop_needs_balance = False
+    assert guard.release(pos) == "error" and calls["n"] == 1
+
+
+def test_wait_until_free_waits_for_the_balance_and_gives_up(monkeypatch):
+    monkeypatch.setattr(StopGuard, "_sleep", staticmethod(lambda s: None))
+    exchange = MagicMock(stop_needs_balance=True)
+    exchange.fetch_balance.side_effect = [0.0, 0.0, 21.95]
+    guard = StopGuard(exchange)
+    assert guard.wait_until_free(_pos()) is True and exchange.fetch_balance.call_count == 3
+
+    exchange.fetch_balance.side_effect = None
+    exchange.fetch_balance.return_value = 0.0
+    assert guard.wait_until_free(_pos()) is False                           # vende lo libre tras 2 s
+
+    exchange.stop_needs_balance = False
+    exchange.fetch_balance.reset_mock()
+    assert guard.wait_until_free(_pos()) is True and exchange.fetch_balance.call_count == 0
+
+
+def test_bot_does_not_sell_while_a_locking_order_cannot_be_cancelled(monkeypatch):
+    guard, exchange, pos, _ = _locked_guard(monkeypatch, fails=99)
+    engine = _engine(elsewhere=False)
+    engine.stop_guard = guard
+    engine.storage = MagicMock()
+
+    assert engine._stop_already_executed(pos) is None                       # espera al siguiente sondeo
+    assert list(exchange.orders) == [pos.stop_order_id]                     # la orden sigue protegiendo
+
+
+def test_bot_sells_after_cancelling_a_locking_order(monkeypatch):
+    guard, exchange, pos, _ = _locked_guard(monkeypatch)
+    engine = _engine(elsewhere=False)
+    engine.stop_guard = guard
+    engine.storage = MagicMock()
+
+    assert engine._stop_already_executed(pos) is False                      # puede vender
+    assert exchange.orders == {} and exchange.fetch_balance("NEAR") == pytest.approx(21.95)
