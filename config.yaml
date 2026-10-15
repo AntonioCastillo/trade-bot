@@ -1,15 +1,19 @@
 # Configuración del bot. Los secretos van en .env, aquí solo parámetros.
+# Exchange: OKX Europa desde octubre de 2026 (antes KuCoin, que dejó de poder dar servicio en
+# España con MiCA). USDC en vez de USDT, sin ETC (no cotiza contra USDC en los exchanges
+# europeos), comisión de la cuenta 0,10% (con la cuenta de derivados X-Perps abierta), y las
+# señales sacadas de KuCoin con Binance de respaldo: el volumen de OKX en USDC es muy bajo para
+# las cabezas que lo miran. Claves en .env: OKX_API_KEY, OKX_API_SECRET y OKX_API_PASSPHRASE.
+# Alternativa preparada: config.bybiteu.yaml (Bybit EU). Ver deploy/DEPLOY.md, secciones 10 y 11.
 
 mode: live           # paper | live. El arranque en run.py confirma si live
-exchange: kucoin
-# Fuente de las señales (opcional): exchange del que salen las velas para estrategias y filtros,
-# con su moneda de cotización. Las órdenes, los saldos y los precios de las salidas siguen
-# siendo los de `exchange`. Pensado para operar donde el volumen es bajo (ver DEPLOY.md, 11).
-# data_exchange: kucoin
-# data_quote: USDT
-# Respaldo si la fuente principal deja de responder (vuelve a la principal cuando responde):
-# data_fallback_exchange: binance
-# data_fallback_quote: USDT
+exchange: myokx
+# Señales con las velas de KuCoin (con las que se ajustó la configuración); si KuCoin deja
+# de responder, de Binance. Órdenes, saldos y precios de las salidas: siempre de OKX.
+data_exchange: kucoin
+data_quote: USDT
+data_fallback_exchange: binance
+data_fallback_quote: USDT
 
 timeframe: 4h          # por defecto 4h
 lookback: 300          # nº de velas a mantener para los indicadores
@@ -21,7 +25,7 @@ universe:
   # acompañar mercados alcistas: sin venta parcial, objetivo lejano y trailing ancho.
   # Mediciones y reservas en docs/AUDIT_2026-10.md (sección 6, punto 5).
   - name: tendencia_alcista
-    symbols: [BTC/USDT, BNB/USDT, SOL/USDT]
+    symbols: [BTC/USDC, BNB/USDC, SOL/USDC]
     strategy: breakout
     timeframe: 1d
     params:
@@ -37,9 +41,10 @@ universe:
 
   # 🟢 Explosión de Volumen (Detecta entradas de dinero institucional)
   # Ampliada el 2026-10-04 con las 5 monedas que quedaron libres (docs/AUDIT_2026-10.md, 6.3).
-  # ATOM, ALGO y ETC también figuran en reversion_rango (desactivada): no reactivar aquella sin quitarlas de aquí.
+  # ATOM y ALGO también figuran en reversion_rango (desactivada): no reactivar aquella sin quitarlas de aquí.
+  # Sin ETC: Bybit EU no lo cotiza contra USDC.
   - name: volumen_explosivo
-    symbols: [ETH/USDT, SUI/USDT, ADA/USDT, AVAX/USDT, ATOM/USDT, ALGO/USDT, ETC/USDT]
+    symbols: [ETH/USDC, SUI/USDC, ADA/USDC, AVAX/USDC, ATOM/USDC, ALGO/USDC]
     strategy: volume_surge
     timeframe: 4h
     macro_btc_filter: true
@@ -63,7 +68,7 @@ universe:
   # (docs/AUDIT_2026-10.md, sección 6.2). Para reactivarla: enabled: true.
   - name: reversion_rango
     enabled: false
-    symbols: [ATOM/USDT, ALGO/USDT, ETC/USDT]
+    symbols: [ATOM/USDC, ALGO/USDC]
     strategy: range_reversion
     timeframe: 4h
     macro_btc_filter: true
@@ -84,7 +89,7 @@ universe:
 
   # 🟢 Rejilla de Acumulación (Grid Trading en 4h con filtro ADX)
   - name: grid_lateral
-    symbols: [NEAR/USDT, LINK/USDT, DOT/USDT, LTC/USDT]
+    symbols: [NEAR/USDC, LINK/USDC, DOT/USDC, LTC/USDC]
     strategy: grid
     timeframe: 4h
     macro_btc_filter: true
@@ -109,7 +114,7 @@ universe:
 
   # 🟢 Caza de Pánicos (Capitulación / Comprar caídas extremas con RSI < 20)
   - name: capitulacion
-    symbols: [XRP/USDT, DOGE/USDT, TRX/USDT, UNI/USDT]
+    symbols: [XRP/USDC, DOGE/USDC, TRX/USDC, UNI/USDC]
     strategy: capitulation
     timeframe: 4h
     macro_btc_filter: true            # restaurado: sin el filtro perdía fuera de muestra (2022), ver AUDIT 6.2
@@ -126,7 +131,7 @@ universe:
       position_size_pct: 0.20
 
 risk:
-  quote_currency: USDT
+  quote_currency: USDC
   starting_balance: 480.00      # saldo real de cuenta
   position_size_pct: 0.20       # tamaño base por operación (20% = ~$96 USD)
   max_open_positions: 8         # capacidad para 4 posiciones direccionales + niveles de grid
@@ -134,18 +139,19 @@ risk:
   take_profit_pct: 0.03
   max_daily_loss_pct: 0.10      # cortafuegos diario (10%)
   max_account_drawdown_pct: 0.15 # disyuntor global de cuenta (cierre de emergencia al 15%)
-  max_total_exposure_pct: 0.80   # reserva mínima del 20% en USDT líquido
-  exposure_on_equity: true       # el tope se mide sobre el equity total, no sobre el USDT libre
+  max_total_exposure_pct: 0.80   # reserva mínima del 20% en USDC líquido
+  exposure_on_equity: true       # el tope se mide sobre el equity total, no sobre el USDC libre
 
 engine:
   poll_interval_seconds: 60     # ciclo cada 60s
   exit_poll_seconds: 10         # entre ciclos, comprobar las salidas de las posiciones abiertas cada 10s
-  # Stop de emergencia EN KuCoin por cada posición, por si el bot o el servidor se caen.
-  # Activado el 2026-10-12 tras pasar `manage.py verify-stops` en el VPS (deploy/DEPLOY.md).
+  # Stop de emergencia EN el exchange por cada posición, por si el bot o el servidor se caen.
+  # Activo: `manage.py verify-stops` pasó sus siete comprobaciones contra OKX el 2026-10-15.
+  # OKX bloquea la moneda mientras vive la orden: el bot la retira antes de vender o reponerla.
   exchange_stops: true
   exchange_stop_buffer_pct: 0.02      # disparo un 2% por debajo del stop del bot
   exchange_stop_min_move_pct: 0.005   # se repone cuando el stop del bot sube al menos un 0,5%
-  fee_pct: 0.0010              # comisión spot estándar (0.1%)
+  fee_pct: 0.0010              # comisión real de la cuenta en OKX con X-Perps (`manage.py fees`, 2026-10-15)
   slippage_pct: 0.0005          # deslizamiento estimado
   report_interval_seconds: 900  # informe cada 15 min
   alive_interval_seconds: 21600 # señal de vida a Telegram (6 h)
@@ -156,9 +162,9 @@ sniper:
 
 carry:
   enabled: false                              # DESACTIVADO: 100% liquidez asignada a Spot (mayor ROI)
-  funding_radar_enabled: true                 # RADAR ACTIVO: escanea tasas extremas e informa por Telegram
+  funding_radar_enabled: false                # apagado: el radar mira los futuros de KuCoin
   radar_min_annualized_pct: 25.0              # Notificar si el funding anualizado supera el 25% anual
-  symbols: [ETH/USDT, SOL/USDT]              # las 2 con más volumen de futuros en KuCoin
+  symbols: [ETH/USDC, SOL/USDC]              # las 2 con más volumen de futuros en KuCoin
   notional_pct: 0.15                          # 15% del balance por posición (por pata)
   min_annualized_pct: 25.0                    # umbral de apertura
   exit_annualized_pct: 0.0                    # cerrar si funding cae a negativo

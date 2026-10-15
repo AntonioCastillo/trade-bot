@@ -21,7 +21,8 @@ from tradebot.storage import Storage
 from tradebot.strategy.base import Strategy
 
 SYMBOL = "ADA/USDC"
-ENV = ("KUCOIN_API_KEY", "KUCOIN_API_SECRET", "KUCOIN_API_PASSPHRASE", "BYBIT_API_KEY", "BYBIT_API_SECRET")
+ENV = ("KUCOIN_API_KEY", "KUCOIN_API_SECRET", "KUCOIN_API_PASSPHRASE", "BYBIT_API_KEY", "BYBIT_API_SECRET",
+       "OKX_API_KEY", "OKX_API_SECRET", "OKX_API_PASSPHRASE")
 YAML = """
 mode: {mode}
 exchange: {exchange}
@@ -89,7 +90,8 @@ def test_symbols_in_another_quote_currency_are_rejected(tmp_path, monkeypatch):
 
 
 def test_bybit_config_mirrors_the_live_one(monkeypatch):
-    """config.bybiteu.yaml debe ser config.yaml cambiando solo exchange, moneda y ETC."""
+    """config.bybiteu.yaml (la alternativa preparada) debe ser config.yaml cambiando solo el
+    exchange, la fuente de señales, la comisión y los stops del exchange."""
     monkeypatch.setattr("tradebot.config.load_dotenv", lambda *a, **k: None)
     for name in ENV:
         monkeypatch.setenv(name, "x")

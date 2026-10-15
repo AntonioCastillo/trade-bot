@@ -5,8 +5,8 @@ el 0,25% aunque su API pública dijera 0,10%, y en OKX Europa depende de tener a
 cuenta de derivados X-Perps (0,10% con ella, 0,20% sin ella, según su tabla).
 
 Uso (en el VPS, con las claves del exchange en .env):
-    python scripts/check_fees.py --config config.okx.yaml
-    python scripts/check_fees.py --config config.bybiteu.yaml --exchange myokx
+    python scripts/check_fees.py                               # el exchange de config.yaml (OKX)
+    python scripts/check_fees.py --config config.bybiteu.yaml  # la alternativa, Bybit EU
 """
 
 from __future__ import annotations
