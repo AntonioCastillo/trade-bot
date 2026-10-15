@@ -144,6 +144,9 @@ class Exchange:
     _is_bybit = False
     _is_okx = False
     _ohlcv_page = 1500
+    # ¿El exchange exige tener la moneda para aceptar la orden de stop (y puede bloquearla
+    # mientras vive)? En OKX sí: con 0 ETH responde 51008 "saldo insuficiente".
+    stop_needs_balance = False
     _data_client = None
     _data_page = 1500
     _fallback = None
@@ -154,6 +157,7 @@ class Exchange:
         self.config = config
         self._is_bybit = config.exchange.startswith("bybit")
         self._is_okx = config.exchange in ("okx", "myokx")
+        self.stop_needs_balance = self._is_okx
         self._ohlcv_page = OHLCV_PAGE.get(config.exchange, 500)     # máximo de velas por petición
         self._client = self._build_client()
         if getattr(config, "signals_elsewhere", False):
@@ -535,9 +539,11 @@ class Exchange:
         if self._is_bybit:
             params = {"triggerPrice": price, "clientOrderId": client_id}
         elif self._is_okx:
-            # OKX: orden "conditional" (algo) de stop a mercado; su identificador de cliente
-            # es algoClOrdId (solo letras y números).
-            params = {"stopLossPrice": price, "clientOrderId": client_id, "algoClOrdId": client_id}
+            # OKX: orden "conditional" (algo) de stop a mercado en modo contado. ccxt manda
+            # por defecto el modo de margen ("cross"), que OKX rechaza con 50013 en una cuenta
+            # de contado (comprobado el 2026-10-15). Su identificador de cliente es algoClOrdId
+            # (solo letras y números).
+            params = {"stopLossPrice": price, "tdMode": "cash", "clientOrderId": client_id, "algoClOrdId": client_id}
         else:
             params = {"stopLossPrice": price, "clientOid": client_id}
         order = self._client.create_order(symbol, "market", "sell", amount, None, params)

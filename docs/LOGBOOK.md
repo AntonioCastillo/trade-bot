@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-15 | OKX: Órdenes de Stop en Modo Contado](#2026-10-15--okx-órdenes-de-stop-en-modo-contado)
 * [2026-10-15 | Preparado para Comprobar la Comisión de OKX Europa](#2026-10-15--preparado-para-comprobar-la-comisión-de-okx-europa)
 * [2026-10-14 | Señales de Otro Exchange y Soporte de OKX Europa (Preparado, sin Activar)](#2026-10-14--señales-de-otro-exchange-y-soporte-de-okx-europa-preparado-sin-activar)
 * [2026-10-14 | Bybit EU: la Cuenta Paga un 0,25% de Comisión](#2026-10-14--bybit-eu-la-cuenta-paga-un-025-de-comisión)
@@ -26,6 +27,19 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-15 | OKX: Órdenes de Stop en Modo Contado
+
+* **Archivos Afectados:** [`src/tradebot/exchange.py`](../src/tradebot/exchange.py), [`src/tradebot/exchange_stops.py`](../src/tradebot/exchange_stops.py), [`scripts/verify_stops.py`](../scripts/verify_stops.py), [`tests/test_signal_source.py`](../tests/test_signal_source.py), [`deploy/DEPLOY.md`](../deploy/DEPLOY.md)
+* **Qué se vio (cuenta real, 15-oct):** `manage.py fees` dio 0,100% a mercado y 0,080% limitada en los 17 pares (X-Perps activo); `verify-account` correcto; `verify-api` correcto (compra y venta de 10 USDC por 0,0115 de coste, comisión de compra cobrada en BTC). `verify-stops` falló al crear la orden: OKX respondió 50013 sin mensaje. Un diagnóstico en el VPS (cuenta con `acctLv` 2) mostró que ccxt manda la orden condicional en modo de margen (`tdMode: cross`), que OKX rechaza con 50013; en modo contado (`tdMode: cash`) la acepta, pero solo si hay saldo de la moneda (51008 con 0 ETH).
+* **Cambios Implementados:**
+  1. Órdenes de stop de OKX con `tdMode: cash`.
+  2. `Exchange.stop_needs_balance` (cierto en OKX): al subir el stop se retira primero la orden vieja y después se pone la nueva, porque la vieja puede tener la moneda bloqueada. Son unos instantes sin orden en el exchange; el stop del bot sigue activo. Si la vieja no se puede retirar, se queda y se reintenta en 5 minutos. En KuCoin y Bybit no cambia nada: se sigue creando la nueva antes de retirar la vieja.
+  3. `verify-stops`: si el exchange exige la moneda y no la hay, lo dice antes de intentarlo (cuánta hace falta); si la hay, informa de si el exchange la bloquea mientras vive la orden.
+* **Pendiente:** repetir `verify-stops --config config.okx.yaml` con unos 0,002 ETH en la cuenta.
+* **Verificación:** 393 tests pasando (3 nuevos con un exchange que exige y bloquea la moneda).
 
 ---
 

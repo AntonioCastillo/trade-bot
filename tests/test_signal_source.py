@@ -189,9 +189,11 @@ def test_okx_stop_is_a_conditional_algo_order_with_an_alphanumeric_client_id():
 
     ex._client.create_order.assert_called_once_with(
         SYMBOL, "market", "sell", 21.95, None,
-        {"stopLossPrice": 4.6872, "clientOrderId": client_id, "algoClOrdId": client_id})
+        {"stopLossPrice": 4.6872, "tdMode": "cash", "clientOrderId": client_id, "algoClOrdId": client_id})
     assert (order["id"], order["client_id"]) == ("algo1", client_id)
     assert client_id.isalnum()                                              # OKX no admite guiones
+    # El modo de margen ("cross"), el que ccxt pone por defecto, OKX lo rechaza con 50013 en una
+    # cuenta de contado; en modo contado exige tener la moneda (51008 si no la hay).
 
 
 def test_okx_lists_conditional_orders_and_reads_their_client_id():
@@ -247,3 +249,75 @@ def test_position_gone_uses_the_total_balance():
     assert guard.position_gone(pos) is False
     exchange.fetch_balances_total.return_value = {}
     assert guard.position_gone(pos) is True
+
+
+# --- exchanges que exigen (y bloquean) la moneda para la orden de stop ------------------------------
+
+class LockingExchange:
+    """Como OKX en modo contado: la orden de stop exige tener la moneda libre y la bloquea."""
+
+    stop_needs_balance = True
+
+    def __init__(self, held=21.95):
+        self.held, self.orders, self.n, self.cancel_fails = held, {}, 0, False
+
+    def fetch_balance(self, currency):
+        return self.held - sum(o["amount"] for o in self.orders.values())     # libre
+
+    def fetch_balances_total(self):
+        return {"NEAR": self.held}
+
+    def create_stop_sell(self, symbol, amount, trigger_price, client_id):
+        if amount > self.fetch_balance("NEAR") + 1e-12:
+            raise ccxt.InsufficientFunds("51008 Your available NEAR balance is insufficient")
+        self.n += 1
+        order = dict(id=f"s{self.n}", client_id=client_id, symbol=symbol, amount=amount, trigger_price=trigger_price)
+        self.orders[order["id"]] = order
+        return order
+
+    def cancel_stop_order(self, order_id, symbol):
+        if self.cancel_fails:
+            raise ccxt.NetworkError("sin red")
+        return self.orders.pop(order_id, None) is not None
+
+
+def _pos():
+    return Position(symbol=SYMBOL, side=Side.BUY, amount=21.95, entry_price=5.0, stop_loss=4.78, take_profit=5.15)
+
+
+def test_raising_the_stop_cancels_the_old_order_first_when_the_coin_is_locked():
+    exchange = LockingExchange()
+    guard = StopGuard(exchange, buffer_pct=0.02, min_move_pct=0.005)
+    pos = _pos()
+    assert guard.sync(pos) and pos.stop_order_id == "s1"
+
+    pos.stop_loss = 4.90                                                   # el arrastre sube el stop
+    assert guard.sync(pos)
+
+    assert pos.stop_order_id == "s2" and list(exchange.orders) == ["s2"]    # la vieja fuera, la nueva puesta
+    assert pos.stop_order_price == pytest.approx(4.90 * 0.98)
+
+
+def test_if_the_old_order_cannot_be_cancelled_it_stays():
+    exchange = LockingExchange()
+    guard = StopGuard(exchange, buffer_pct=0.02, min_move_pct=0.005)
+    pos = _pos()
+    guard.sync(pos)
+    exchange.cancel_fails = True
+
+    pos.stop_loss = 4.90
+    assert guard.sync(pos) is False
+
+    assert pos.stop_order_id == "s1" and list(exchange.orders) == ["s1"]    # sigue protegida por la anterior
+
+
+def test_exchanges_that_do_not_lock_keep_creating_before_cancelling():
+    exchange = LockingExchange()
+    exchange.stop_needs_balance = False
+    exchange.fetch_balance = lambda currency: exchange.held                # no bloquea
+    guard = StopGuard(exchange, buffer_pct=0.02, min_move_pct=0.005)
+    pos = _pos()
+    guard.sync(pos)
+    pos.stop_loss = 4.90
+    guard.sync(pos)
+    assert pos.stop_order_id == "s2" and list(exchange.orders) == ["s2"]

@@ -292,9 +292,11 @@ señales de KuCoin con Binance de respaldo y la comisión esperada con X-Perps (
    ```bash
    cd /opt/tradebot && sudo -u tradebot .venv/bin/python scripts/manage.py verify-stops --config config.okx.yaml
    ```
-   `verify-api` necesita unos 20 USDC en OKX (el mínimo de BTC/USDC es 0,0001 BTC). Las
-   órdenes de stop de OKX son de otro tipo (algo "conditional") y no se han probado en real: si
-   `verify-stops` falla, hay que corregir el código antes de seguir.
+   `verify-api` necesita unos 20 USDC en OKX (el mínimo de BTC/USDC es 0,0001 BTC).
+   `verify-stops` necesita **tener la moneda**: OKX solo acepta la orden de stop (en modo contado)
+   si hay saldo para venderla. Con ETH/USDC hacen falta 0,002 ETH: compra unos 6 USDC de ETH en
+   OKX antes de lanzarla. El script avisa si falta y dice si OKX bloquea ese saldo mientras la
+   orden está viva. Si `verify-stops` falla, hay que corregir el código antes de seguir.
 
 ### El cambio
 Igual que en la sección 10 (pausar, cerrar posiciones, mover el saldo), con un PR solo de
