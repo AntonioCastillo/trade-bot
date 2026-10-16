@@ -21,6 +21,7 @@ from tradebot.storage import Storage
 from tradebot.strategy.base import Strategy
 
 SYMBOL = "ADA/USDC"
+NOT_ON_BYBIT = {"ETC", "FET"}       # no cotizan contra USDC en Bybit EU
 ENV = ("KUCOIN_API_KEY", "KUCOIN_API_SECRET", "KUCOIN_API_PASSPHRASE", "BYBIT_API_KEY", "BYBIT_API_SECRET",
        "OKX_API_KEY", "OKX_API_SECRET", "OKX_API_PASSPHRASE")
 YAML = """
@@ -105,7 +106,7 @@ def test_bybit_config_mirrors_the_live_one(monkeypatch):
             out[(ins.category, base)] = fields
         return out
 
-    expected = {k: v for k, v in heads(kucoin).items() if k[1] != "ETC"}
+    expected = {k: v for k, v in heads(kucoin).items() if k[1] not in NOT_ON_BYBIT}
     assert heads(bybit) == expected
     assert all(s.endswith("/USDC") for s in bybit.symbols())
     assert asdict(bybit.risk) == dict(asdict(kucoin.risk), quote_currency="USDC")

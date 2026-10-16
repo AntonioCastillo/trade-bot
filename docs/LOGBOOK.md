@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-17 | Capitulación Ampliada a 12 Monedas](#2026-10-17--capitulación-ampliada-a-12-monedas)
 * [2026-10-15 | El Bot Pasa a Operar en OKX Europa](#2026-10-15--el-bot-pasa-a-operar-en-okx-europa)
 * [2026-10-15 | Ventas del Bot cuando el Exchange Bloquea la Moneda (OKX)](#2026-10-15--ventas-del-bot-cuando-el-exchange-bloquea-la-moneda-okx)
 * [2026-10-15 | OKX: Órdenes de Stop en Modo Contado](#2026-10-15--okx-órdenes-de-stop-en-modo-contado)
@@ -29,6 +30,28 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-17 | Capitulación Ampliada a 12 Monedas
+
+* **Archivos Afectados:** [`config.yaml`](../config.yaml), [`config.bybiteu.yaml`](../config.bybiteu.yaml), [`tests/test_okx_config.py`](../tests/test_okx_config.py), [`tests/test_bybit_eu.py`](../tests/test_bybit_eu.py)
+* **Motivo:** con las señales sacadas de KuCoin, el bajo volumen de OKX en USDC ya no limita qué monedas puede operar el bot, y OKX tiene casi 300 pares en USDC. Se midió si alguna cabeza gana con más monedas: 16 candidatas que cotizan en USDC en OKX y tienen historia en KuCoin, añadidas a cada cabeza, con el bot completo simulado desde 2022 (velas de KuCoin, comisión 0,10%, configuración actual sin ETC), partido en dos mitades. Para no escoger por azar, la prueba decisiva fue por grupos ordenados por volumen en KuCoin, sin mirar el resultado.
+* **Resultados** (referencia: +176,2%; 1ª mitad +73,7, 2ª +58,9; caída máx. 11,1%):
+
+  | Cambio | Resultado | 1ª mitad | 2ª mitad | Caída máx. |
+  |---|---:|---:|---:|---:|
+  | capitulación + 4 más líquidas | +192,0% | +74,3 | +67,3 | 11,1% |
+  | **capitulación + 8 más líquidas** | **+196,0%** | **+74,5** | **+69,4** | **11,1%** |
+  | capitulación + 16 | +186,8% | +73,6 | +65,0 | 11,1% |
+  | volumen + 4 más líquidas | +208,4% | +62,1 | +90,3 | 14,2% |
+  | volumen + 8 más líquidas | +177,9% | +67,0 | +66,4 | 15,1% |
+  | volumen + 16 | +162,4% | +78,3 | +47,1 | 19,9% |
+
+  * **Capitulación:** con las 8 más líquidas pasa de 9 a 28 operaciones y de +3,8 a +18,7 puntos, sin empeorar ninguna mitad ni la caída máxima. Una por una, 12 de las 16 suman algo. Reserva: son 19 operaciones más y la mejora se concentra en 2024–2026.
+  * **Volumen explosivo:** sin mejora estable. Con 4 más gana en total pero empeora la primera mitad y la caída; con más monedas compiten por el saldo (rechazos por tope de posiciones de 3 a 364). Una por una, de +21 (HBAR) a −27 (OP): dispersión de azar. Se deja como está.
+  * **Grid:** casi todas restan algo (−0,1 a −3,4 puntos): sin ventaja, más monedas solo añaden operaciones neutras. Se deja como está.
+* **Cambio:** capitulación con XRP, DOGE, TRX, UNI + AAVE, INJ, ARB, TIA, FIL, XLM, FET y OP. Las 8 cotizan en USDC en OKX y tienen par USDT en KuCoin (señales) y en Binance (respaldo). En `config.bybiteu.yaml`, sin FET, que Bybit EU no cotiza contra USDC.
 
 ---
 
