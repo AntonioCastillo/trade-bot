@@ -26,8 +26,12 @@ def test_live_config_runs_on_okx_with_kucoin_signals(monkeypatch):
     assert okx.credentials.needs_passphrase is True and okx.credentials.is_complete
     assert okx.carry.funding_radar_enabled is False
 
-    same = lambda c: [{k: v for k, v in asdict(i).items()} for i in c.instruments]
+    # Bybit EU no cotiza FET contra USDC: es la única moneda que solo está en OKX.
+    same = lambda c: [{k: v for k, v in asdict(i).items()} for i in c.instruments if not i.symbol.startswith("FET/")]
     assert same(okx) == same(bybit)
+    assert {i.symbol for i in okx.instruments} - {i.symbol for i in bybit.instruments} == {"FET/USDC"}
+    capit = [i.symbol.split("/")[0] for i in okx.instruments if i.category == "capitulacion"]
+    assert capit == ["XRP", "DOGE", "TRX", "UNI", "AAVE", "INJ", "ARB", "TIA", "FIL", "XLM", "FET", "OP"]
     assert asdict(okx.risk) == asdict(bybit.risk)
     differ = dict(fee_pct=None, exchange_stops=None)
     assert dict(asdict(okx.engine), **differ) == dict(asdict(bybit.engine), **differ)

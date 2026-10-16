@@ -114,7 +114,12 @@ universe:
 
   # 🟢 Caza de Pánicos (Capitulación / Comprar caídas extremas con RSI < 20)
   - name: capitulacion
-    symbols: [XRP/USDC, DOGE/USDC, TRX/USDC, UNI/USDC]
+  # Ampliada el 2026-10-17 con las 8 candidatas más líquidas en KuCoin (AAVE, INJ, ARB, TIA, FIL,
+  # XLM, FET, OP), elegidas por liquidez y no por su resultado simulado: desde 2022, +176% -> +196%
+  # sin empeorar ninguna mitad ni la caída máxima (docs/LOGBOOK.md). Compra en caídas de pánico,
+  # que son raras: con 4 monedas solo encontró 9 en casi cinco años.
+    symbols: [XRP/USDC, DOGE/USDC, TRX/USDC, UNI/USDC, AAVE/USDC, INJ/USDC, ARB/USDC, TIA/USDC,
+              FIL/USDC, XLM/USDC, FET/USDC, OP/USDC]
     strategy: capitulation
     timeframe: 4h
     macro_btc_filter: true            # restaurado: sin el filtro perdía fuera de muestra (2022), ver AUDIT 6.2
