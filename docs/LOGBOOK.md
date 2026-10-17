@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-17 | Sin Cambios: Salidas de `volumen_explosivo` y Cabezas con las Monedas Libres de OKX](#2026-10-17--sin-cambios-salidas-de-volumen_explosivo-y-cabezas-con-las-monedas-libres-de-okx)
 * [2026-10-17 | Capitulación Ampliada a 12 Monedas](#2026-10-17--capitulación-ampliada-a-12-monedas)
 * [2026-10-15 | El Bot Pasa a Operar en OKX Europa](#2026-10-15--el-bot-pasa-a-operar-en-okx-europa)
 * [2026-10-15 | Ventas del Bot cuando el Exchange Bloquea la Moneda (OKX)](#2026-10-15--ventas-del-bot-cuando-el-exchange-bloquea-la-moneda-okx)
@@ -30,6 +31,37 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-17 | Sin Cambios: Salidas de `volumen_explosivo` y Cabezas con las Monedas Libres de OKX
+
+* **Archivos Afectados:** ninguno (solo mediciones).
+* **Motivo:** en real, `volumen_explosivo` lleva −34,36 USDC con un 53% de operaciones ganadoras. Agrupado por posición (la venta parcial y el resto cuentan como una), son 4 ganadoras (+34,08, media +8,5) y 5 perdedoras (−68,46, media −13,7). Tres stops completos (ADA, ATOM y ETH) suman −57,8, y las dos ventas por precios que no existieron, −10,70. La ganadora media (+5% de la posición) y la perdedora media (−5 a −6%) coinciden con lo simulado; lo que no coincide es el acierto: 4 de 9 posiciones frente al 64% simulado, dentro de lo esperable con 9 posiciones en un mercado sin tendencia. Se midió si la venta parcial o el objetivo explican la asimetría y, de paso, si alguna cabeza, activa o retirada, gana con las monedas de OKX que no usa nadie.
+* **Método:** bot completo simulado desde 2022 con velas de KuCoin, comisión 0,10% y la configuración actual, partido en dos mitades (corte 2024-05-18). Referencia: **+194,8%** (1ª mitad +74,5, 2ª +68,7), caída máx. 11,1%.
+* **`volumen_explosivo`, venta parcial × objetivo** (stop 6% y trailing 8% sin cambios):
+
+  | Parcial | Objetivo | Resultado | 1ª mitad | 2ª mitad | Caída máx. | Aporta la cabeza | Acierto |
+  |---:|---:|---:|---:|---:|---:|---:|---:|
+  | **5%** | **20%** | **+194,8%** | +74,5 | +68,7 | **11,1%** | +90,9 | 64% |
+  | 5% | 15% / 30% | +185,6% / +190,9% | +74,5 / +74,3 | +63,3 / +66,7 | 10,4% / 11,0% | +80,7 / +86,3 | 64% |
+  | sin parcial | 20% / 30% | +198,1% / +198,6% | +74,5 / +77,3 | +70,9 / +68,5 | 15,7% / 16,2% | +101,5 / +98,1 | 37% |
+  | 8% | 20% | +180,9% | +74,8 | +60,5 | 12,0% | +78,7 | 44% |
+  | 10% | 20% | +175,5% | +73,3 | +58,8 | 12,9% | +75,6 | 37% |
+
+  * El objetivo del 20% es el mejor con cualquier parcial. Quitar la parcial gana 3 puntos pero sube la caída máxima del 11,1% al 15,7%: las ganadoras doblan su tamaño y se acierta la mitad de veces. Parcial al 8% o 10%, peor en todo. **Se deja como está.**
+* **Cabezas con las monedas libres de OKX:** 23 monedas que cotizan en USDC en OKX, no usa ninguna cabeza activa y tienen historia en KuCoin anterior a 2024 (por liquidez: ZEC, TAO, SEI, PEPE, SHIB, WLD, BCH, HBAR, PYTH, STX, DASH, RSR, APT, CRV, ICP, SAND, PENDLE, BAT, POL, ZIL, VELO, LDO, GRT). Cada cabeza se añade al bot con las 4, 8 o 16 más líquidas, sin mirar su resultado. Las retiradas usan su última definición (`breakout_diario` y `momentum_diario`, del commit anterior a su sustitución; `reversion_rango`, la de `config.yaml`).
+
+  | Cabeza | + 4 | + 8 | + 16 |
+  |---|---:|---:|---:|
+  | `tendencia_alcista` | +148,3% | +169,6% | +92,3% |
+  | `breakout_diario` | +186,8% | +174,0% | +133,7% |
+  | `momentum_diario` | +194,6% | +185,8% | +166,2% |
+  | `reversion_rango` | +167,9% | +151,2% | +130,7% |
+
+  * Ninguna de las 12 supera la referencia. Lo más cercano (`breakout_diario` y `momentum_diario` con 4) aporta ±1 punto. El patrón se repite: ganan algo en la primera mitad y pierden en la segunda (las monedas libres son sobre todo las que han caído o se han estancado desde 2024), y cuantas más monedas, peor, porque restan saldo a las cabezas que funcionan. `tendencia_alcista` confirma lo visto en la auditoría: solo funciona con monedas grandes.
+  * Las cabezas retiradas: `reversion_rango` se desactivó por perder (restaba en las dos mitades) y vuelve a perder en todos los grupos; `breakout_diario` y `momentum_diario` no perdían, se sustituyeron por `tendencia_alcista`, que gana más en absoluto, y con estas monedas tampoco aportan.
+* **Decisión:** no se cambia nada. No repetir estas pruebas sin una idea nueva.
 
 ---
 
