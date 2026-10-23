@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-23 | Operaciones Reales del 4 al 23 de Octubre frente a la Simulación](#2026-10-23--operaciones-reales-del-4-al-23-de-octubre-frente-a-la-simulación)
 * [2026-10-17 | Sin Cambios: Salidas de `volumen_explosivo` y Cabezas con las Monedas Libres de OKX](#2026-10-17--sin-cambios-salidas-de-volumen_explosivo-y-cabezas-con-las-monedas-libres-de-okx)
 * [2026-10-17 | Capitulación Ampliada a 12 Monedas](#2026-10-17--capitulación-ampliada-a-12-monedas)
 * [2026-10-15 | El Bot Pasa a Operar en OKX Europa](#2026-10-15--el-bot-pasa-a-operar-en-okx-europa)
@@ -31,6 +32,32 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-23 | Operaciones Reales del 4 al 23 de Octubre frente a la Simulación
+
+* **Archivos Afectados:** ninguno (solo medición).
+* **Motivo:** en octubre el resultado realizado pasó de positivo a −1,93 USDC. Con tan pocas operaciones por cabeza, el acierto real no permite concluir nada (para distinguir un 64% de un 50% en `volumen_explosivo` harían falta unas 100 posiciones). Lo que sí se puede comprobar es si el bot real hace lo mismo que el simulado en las mismas fechas.
+* **Método:** simulación del bot con la configuración actual desde el 2026-10-04 (velas de KuCoin, comisión 0,10%), emparejada con las 29 operaciones reales abiertas desde esa fecha por cabeza, moneda y hora de entrada (±1 h).
+* **Resultado:**
+  * **20 de 29 coinciden**, a la misma hora y con el precio de entrada a menos de un 0,3%. En la mayoría el resultado es casi igual: ATOM −5,07% frente a −5,10%, ALGO +4,79% frente a +4,71%, ETH −4,04% frente a −4,20%, ALGO del 20-oct −4,58% frente a −4,78%, y SUI, LINK, LTC y las NEAR del grid en la misma línea. La ATOM abierta también está en la simulación.
+  * **Periodo completo:** simulación −6,4% del equity (`volumen_explosivo` −4,7, `capitulacion` −1,2, `grid_lateral` −0,4); real ≈ −4,2% (−106 USDC cerrados más la ATOM abierta).
+* **Diferencias y su causa:**
+
+  | Diferencia | Efecto en real | Causa |
+  |---|---:|---|
+  | 8 operaciones del grid (NEAR 11–19 oct, DOT 7 oct) sin equivalente simulado | ≈ −12 USDC | La simulación pausa el grid el 8-oct por 3 stops en 7 días; en real se reanudó a mano el 11-oct |
+  | Caída del 7-oct 02:00: ADA −5,95% y DOT −8,45% frente a −3,9% y −5,5% | ≈ −12 USDC | El precio cayó un 4% en 90 s y las ventas se llenaron por debajo del stop (el peor deslizamiento registrado, −2,81%); el simulador supone un deslizamiento pequeño |
+  | ADA y AVAX del 13-oct (ventas por precios que no existieron): −1,1% y −3,0% frente a −6,4% y −6,4% | ≈ +18 USDC | Las dos monedas siguieron cayendo hasta sus stops: suerte |
+  | DOGE (capitulación): +2,83% frente a −2,35% | ≈ +11 USDC | Mismo precio de entrada; con un trailing del 3%, azar |
+  | 3 entradas de `volumen_explosivo` del 15-oct solo simuladas | a favor del real | Entradas pausadas durante el cambio a OKX; en la simulación suman en negativo |
+
+* **Conclusiones:**
+  1. El bot real reproduce la simulación: no hay fallos de funcionamiento. Las pérdidas de octubre son las que la simulación da para este mercado (octubre de 2026 simulado: −5,5%, empatado con el peor mes desde 2022; 20 de 57 meses negativos; la mitad de los tramos sin nuevo máximo duran más de 47 días).
+  2. Reanudar a mano una pausa por strikes costó dinero (≈ −12 USDC). Conviene dejar actuar la regla.
+  3. Las caídas bruscas son el único coste que el simulador recoge de menos. Con el sondeo cada 10 s no hay mucho margen; el stop de emergencia de OKX protege si el bot está caído, no en una caída rápida.
+  4. La simulación de 5 años sigue siendo válida como referencia para juzgar las cabezas.
 
 ---
 
