@@ -42,6 +42,9 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * **Motivo:** decisión del operador. Con el bot estable, el informe de estado cada 6 h (4 al día, más el de medianoche) era excesivo.
 * **Cambio:** `engine.alive_interval_seconds: 0` desactiva la señal de vida periódica (antes, 0 la habría enviado en cada ciclo). Queda el informe diario de las 00:00 UTC, que también sirve de prueba de vida: si no llega, algo va mal. Los avisos de operaciones, stops, pausas, cortafuegos, fallos y cambio de fuente de señales no cambian; el gist sigue publicándose cada 15 min.
 * **Verificación:** 400 tests pasando (nuevo: 0 = desactivada).
+
+---
+
 ### 2026-10-23 | Operaciones Reales del 4 al 23 de Octubre frente a la Simulación
 
 * **Archivos Afectados:** ninguno (solo medición).
