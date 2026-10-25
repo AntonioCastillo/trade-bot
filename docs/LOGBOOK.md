@@ -4,6 +4,7 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 
 ---
 
+* [2026-10-25 | Sin Señal de Vida cada 6 h en Telegram](#2026-10-25--sin-señal-de-vida-cada-6-h-en-telegram)
 * [2026-10-23 | Operaciones Reales del 4 al 23 de Octubre frente a la Simulación](#2026-10-23--operaciones-reales-del-4-al-23-de-octubre-frente-a-la-simulación)
 * [2026-10-17 | Sin Cambios: Salidas de `volumen_explosivo` y Cabezas con las Monedas Libres de OKX](#2026-10-17--sin-cambios-salidas-de-volumen_explosivo-y-cabezas-con-las-monedas-libres-de-okx)
 * [2026-10-17 | Capitulación Ampliada a 12 Monedas](#2026-10-17--capitulación-ampliada-a-12-monedas)
@@ -32,6 +33,15 @@ Este documento registra cronológicamente cada cambio significativo en el códig
 * [2026-09-26 | Calibración de Eficiencia y Dimensionamiento en Grid Lateral (12% por Peldaño)](#2026-09-26--calibración-de-eficiencia-y-dimensionamiento-en-grid-lateral-12-por-peldaño)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 3: Jerarquía de Ejecución y Resiliencia de Red)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-3-jerarquía-de-ejecución-y-resiliencia-de-red)
 * [2026-09-20 | Refactorización Arquitectónica y Simplificación (Fase 2: Notificaciones Tipadas y Unificación de Modelos)](#2026-09-20--refactorización-arquitectónica-y-simplificación-fase-2-notificaciones-tipadas-y-unificación-de-modelos)
+
+---
+
+### 2026-10-25 | Sin Señal de Vida cada 6 h en Telegram
+
+* **Archivos Afectados:** [`src/tradebot/scheduler.py`](../src/tradebot/scheduler.py), [`src/tradebot/config.py`](../src/tradebot/config.py), [`config.yaml`](../config.yaml), [`config.bybiteu.yaml`](../config.bybiteu.yaml), [`tests/test_scheduler.py`](../tests/test_scheduler.py)
+* **Motivo:** decisión del operador. Con el bot estable, el informe de estado cada 6 h (4 al día, más el de medianoche) era excesivo.
+* **Cambio:** `engine.alive_interval_seconds: 0` desactiva la señal de vida periódica (antes, 0 la habría enviado en cada ciclo). Queda el informe diario de las 00:00 UTC, que también sirve de prueba de vida: si no llega, algo va mal. Los avisos de operaciones, stops, pausas, cortafuegos, fallos y cambio de fuente de señales no cambian; el gist sigue publicándose cada 15 min.
+* **Verificación:** 400 tests pasando (nuevo: 0 = desactivada).
 
 ---
 

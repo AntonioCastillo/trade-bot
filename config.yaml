@@ -159,7 +159,7 @@ engine:
   fee_pct: 0.0010              # comisión real de la cuenta en OKX con X-Perps (`manage.py fees`, 2026-10-15)
   slippage_pct: 0.0005          # deslizamiento estimado
   report_interval_seconds: 900  # informe cada 15 min
-  alive_interval_seconds: 21600 # señal de vida a Telegram (6 h)
+  alive_interval_seconds: 0     # sin señal de vida periódica (2026-10-25): basta el informe diario de las 00:00 UTC
   error_notify_interval_seconds: 1800
 
 sniper:

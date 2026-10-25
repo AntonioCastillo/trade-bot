@@ -42,7 +42,7 @@ class EngineConfig:
     fee_pct: float = 0.001
     slippage_pct: float = 0.0005
     report_interval_seconds: int = 900        # cada cuánto vuelca el informe a disco
-    alive_interval_seconds: int = 21600       # señal de vida a Telegram (6 h)
+    alive_interval_seconds: int = 21600       # señal de vida a Telegram (6 h); 0 = desactivada
     error_notify_interval_seconds: int = 1800  # anti-spam de avisos de fallo (30 min)
 
 
