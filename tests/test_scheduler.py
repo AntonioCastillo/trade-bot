@@ -73,6 +73,13 @@ def test_scheduler_alive_due():
     assert not sched.is_alive_due(t_now=t0 + 1050)
 
 
+def test_scheduler_alive_disabled_with_zero():
+    sched = EventScheduler(alive_interval_seconds=0)
+    t0 = 2000.0
+    sched.last_alive_ts = t0
+    assert not any(sched.is_alive_due(t_now=t0 + dt) for dt in (0, 60, 21600, 10**7))
+
+
 def test_scheduler_can_notify_error():
     sched = EventScheduler(error_notify_interval_seconds=300)
     t0 = 5000.0

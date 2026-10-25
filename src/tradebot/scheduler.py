@@ -55,7 +55,9 @@ class EventScheduler:
         return False
 
     def is_alive_due(self, t_now: float | None = None) -> bool:
-        """Devuelve True si toca enviar la señal de vida periódica a Telegram."""
+        """Devuelve True si toca enviar la señal de vida periódica a Telegram (0 = desactivada)."""
+        if self.alive_interval <= 0:
+            return False
         t = t_now if t_now is not None else time.time()
         if (t - self.last_alive_ts) >= self.alive_interval:
             self.last_alive_ts = t
